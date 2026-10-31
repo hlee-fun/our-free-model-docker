@@ -23,7 +23,7 @@ services:
       # 容器内无 Bun 时推理会 502；此变量恢复旧传输层（不需要可删）
       OUR_FREE_MODEL_FREE_TRANSPORT: node
       # 放行访问管理页的主机：host 网络自动探测，桥接网络须手动填宿主 IP
-      # OFM_TRUSTED_HOSTS: "<宿主IP>"
+      # OFM_TRUSTED_HOSTS: "<宿主IP>"   # 例: 192.168.1.10，多个用逗号分隔
       # OFM_ADMIN_PORT: "18900"
       # OFM_LAN_PORT: "18901"
 

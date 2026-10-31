@@ -3,7 +3,7 @@
  *
  * 背景: 上游 src/trust.js 的 structuralReason() 要求管理请求的 Host 必须是 loopback 名
  *   (127.0.0.1 / ::1 / localhost), 且 Origin/Referer 必须与 Host 一致 —— 即 "Host 信任围栏"
- *   (issue #216)。因此即使把管理端口透传到局域网, 局域网设备用 <宿主IP> 访问也会被 403。
+ *   (issue #216)。因此即使把管理端口透传到局域网, 局域网设备用宿主 IP 访问也会被 403。
  *
  * 做法: 在保留 loopback 的前提下, 允许 OFM_TRUSTED_HOSTS (逗号分隔的主机名/IP) 通过围栏。
  *   - 只改围栏判定, 不改监听绑定(监听仍由 socat 透传, app 自身仍绑 loopback);
