@@ -1,0 +1,72 @@
+# our-free-model 独立服务 · Docker Compose
+#
+# 设计原则（对应需求）：
+#   1. 仅远程拉取镜像 —— 无 build 段，不依赖本地 Dockerfile / 构建上下文
+#   2. 本地无任何配置文件 —— 无 env_file、无宿主目录挂载；数据用命名卷 ofm-data
+#   3. 镜像名可后改 —— 用 ${OFM_IMAGE:-...} 占位：既可直接改默认值，
+#      也可运行时 `OFM_IMAGE=xxx docker compose up -d` 覆盖（无需 .env 文件）
+#
+# ⚠️ 唯一需要你改的地方：下面 image 的默认值 → 换成你的远程镜像地址。
+#
+# 用法：
+#   docker compose up -d          # 拉取并启动
+#   docker compose logs -f ofm    # 看管理页登录链接 / 放行主机
+#   docker compose down           # 停止（卷保留）
+#
+# 端口（默认，均可在 environment 下用 OFM_ADMIN_PORT / OFM_LAN_PORT 覆盖）：
+#   18900  管理页（上游强制绑 127.0.0.1；由镜像内 socat 透传到局域网 IP）
+#   18901  网关（0.0.0.0，OpenAI 兼容 /v1/*）
+
+name: ofm
+
+services:
+  ofm:
+    # ─────────────────────────────────────────────────────────────
+    # TODO: 改成你的远程镜像，例如 ghcr.io/<you>/our-free-model:v2.7.4-docker-0.2
+    # ─────────────────────────────────────────────────────────────
+    image: ${OFM_IMAGE:-your-registry.example.com/our-free-model:v2.7.4-docker-0.2}
+
+    container_name: ofm
+    restart: unless-stopped
+
+    # host 网络：容器内可直接看到宿主局域网 IP，自动透传管理页（已实测）。
+    # 与 ports 互斥，故下面不写 ports。
+    network_mode: host
+
+    environment:
+      # 数据目录（镜像内 VOLUME；配合下面的命名卷持久化）
+      OFM_HOME: /data
+      TZ: Asia/Shanghai
+
+      # 免费车道推理传输层：容器内无 Bun 时 /v1/chat/completions 会 502，
+      # 该变量恢复旧传输层即可正常推理（上游官方提供的开关）。不需要可删除本行。
+      OUR_FREE_MODEL_FREE_TRANSPORT: node
+
+      # 管理端口 / 网关端口（默认值即上游默认；一般无需改）
+      # OFM_ADMIN_PORT: "18900"
+      # OFM_LAN_PORT: "18901"
+
+      # 放行访问管理页的主机（Host 信任围栏）。host 网络下会**自动探测**局域网 IP，
+      # 无需填写；若改用桥接网络（见文件末尾），取消注释并填宿主的局域网 IP：
+      # OFM_TRUSTED_HOSTS: "<宿主IP>"
+
+    volumes:
+      # 命名卷：settings.json（含 managementKey / 局域网 Key）、渠道凭据、用量统计
+      - ofm-data:/data
+
+    stop_grace_period: 20s
+
+volumes:
+  ofm-data: {}
+
+# ─────────────────────────────────────────────────────────────────
+# 备选：桥接网络（Docker Desktop / 不便用 host 网络时）
+#   1. 注释掉上面 `network_mode: host`
+#   2. 在 service 下加：
+#        ports:
+#          - "18901:18901"      # 网关对外（可改宿主侧端口，如 "9001:18901"）
+#          - "18900:18900"      # 管理页：经容器内 socat 透传后映射出来
+#   3. 取消注释 environment 中的 OFM_TRUSTED_HOSTS，填宿主局域网 IP
+#      （不填则管理页访问会被上游 Host 信任围栏 403）
+#   注：桥接下网关（18901）原本就绑 0.0.0.0，映射即可用；管理页需要以上两步。
+# ─────────────────────────────────────────────────────────────────

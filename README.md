@@ -24,14 +24,14 @@
      未设置该环境变量时行为与上游完全一致（仍只信任 loopback）。
   管理页本身仍需 managementKey 登录。
 - **依赖**：socat 与 `OFM_TRUSTED_HOSTS` 都靠"容器能看到宿主网络接口"自动得到局域网 IP，
-  因此推荐 `--network host`（Linux，见 `local-test/start-local.sh`）。
+  因此推荐 `--network host`（Linux，见 `docker-compose.yml`）。
   若必须用桥接网络，需自行 `-e OFM_TRUSTED_HOSTS=<宿主IP>` 并 `-p 18900:18900` 映射（此时自动探测到的是容器内网 IP，不生效）。
 - **LAN 推理中继**：显式 `--lan` 后额外监听 `0.0.0.0`，仅转发推理路径，用独立 LAN Key。
 
 对外暴露的应是**两者按需**：LAN 中继（18901）给下游客户端/网关调用；管理（18900，经 socat 透传）给需要跨设备管理的场景。端口**数字只是默认值**，可随意改：
 `--port` / `--lan-port` 改容器内监听号，`docker run -p <宿主>:<容器>` 再改宿主映射。默认用 `18900`(管理) / `18901`(LAN 中继) 仅为约定，非硬性要求。
 > 注：dsh **插件**侧确有 5+ 处端口配置，但本容器跑的是**独立(standalone)模式**，只有上述两个监听器；插件侧的端口与本容器无关。
-> 策略二（直接源码补丁放宽 loopback）见 PLAN.md 第六章，MIT 允许但改动安全关键代码；本期改用等效且更安全的 **socat 透传** 实现同样效果，不采用策略二。
+> 策略二（直接源码补丁放宽 loopback）详见本地 `PLAN.md` 第六章（该文档不入库），MIT 允许但改动安全关键代码；本期改用等效且更安全的 **socat 透传** 实现同样效果，不采用策略二。
 
 ## 上游代码引入与「排除 DSH 依赖」做法
 - 构建期 `git clone --depth 1` 浅克隆上游（默认 `main`，可 `UPSTREAM_REF` 锁定到 release tag）。
@@ -47,7 +47,19 @@ BATCH=0.2 ./build.sh             # 同一上游, 新批次
 ```
 构建时从上游 GitHub 浅克隆，运行时零 npm 依赖（仅 Node 内置 + 清单 JS + 一个 WASM）。
 
-## 运行
+## 部署运行（Docker Compose · 推荐）
+纯**远程拉取**镜像，无本地 build、不依赖任何本地文件（无 `env_file`、无宿主目录挂载，数据用命名卷 `ofm-data`）：
+```sh
+# 1) 编辑 docker-compose.yml, 把 image 默认值换成你的远程镜像
+#    (也可不改文件: OFM_IMAGE=<你的镜像> docker compose up -d)
+docker compose up -d
+docker compose logs -f ofm      # 查看放行主机 / 管理页登录链接
+docker compose down             # 停止(卷保留)
+```
+compose 内已默认 `network_mode: host`（socat 自动探测宿主局域网 IP）。
+桥接网络的改法写在 `docker-compose.yml` 末尾注释里。
+
+## 运行（docker run 等价写法）
 ```sh
 # 长期: 仅暴露 LAN 网关 18901
 docker run -d --name ofm \
@@ -85,18 +97,10 @@ Authorization: `Bearer <LAN Key>`（LAN Key 用上面 `docker exec` 命令生成
 
 > 备注：实测 `/v1/models` 经 LAN Key 返回 200 与模型清单；免费车道实际推理需要上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，与容器化无关。
 
-## 本地测试环境 (local-test)
+## 本地测试环境（不入库）
 
-`local-test/` 提供一键可复用的本机测试环境：以 `--network host` 启动容器（管理页 `18900`
-在宿主 `127.0.0.1` 直接可达，便于浏览器目视）、持久绑定 `local-test/data`、并自动注入**固定 LAN Key**
-（`LANKEY-local-fixed-2026-00000001`），保证所有本地测试复用同一网关鉴权值。
-
-```sh
-./local-test/start-local.sh
-```
-
-网关：`http://127.0.0.1:18901/v1` + `Authorization: Bearer LANKEY-local-fixed-2026-00000001`。
-详见 [`local-test/README-local-test.md`](./local-test/README-local-test.md)。
+`local-test/` 是一键本机测试环境（`--network host` 启动、持久绑定 `local-test/data`、注入固定 LAN Key），
+**仅存在于本地工作副本**：所有涉及 test 的文件与 `PLAN.md` 均已加入 `.gitignore`，不同步至 git。
 
 ## 文档
-完整方案与维护策略见 [`PLAN.md`](./PLAN.md)。
+完整方案与维护策略见本地 `PLAN.md`（草案，不入库）。
