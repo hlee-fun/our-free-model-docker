@@ -28,10 +28,20 @@ ENV NODE_ENV=production
 WORKDIR /app
 # 仅复制独立服务所需文件(无 npm install, 无 DSH 依赖)
 COPY --from=builder /dist/ /app/
+# 极小补丁: 让 src/trust.js 的 Host 信任围栏支持 OFM_TRUSTED_HOSTS
+# (未设置该环境变量时行为与上游完全一致; 见 docker/patch-trust.mjs)
+COPY docker/patch-trust.mjs /patch-trust.mjs
+RUN node /patch-trust.mjs
+# socat: 把 loopback 的管理端口透传到局域网(纯 TCP 转发, 不改上游源码)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends socat \
+ && rm -rf /var/lib/apt/lists/*
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 VOLUME ["/data"]
-# LAN 推理中继端口(0.0.0.0, 对外网关); 管理端口 18900 仅容器内回环, 不在此 EXPOSE
-EXPOSE 18901
+# LAN 推理中继 18901(0.0.0.0, 对外网关) + 管理端口 18900(socat 透传到局域网)
+EXPOSE 18900 18901
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18900/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-ENTRYPOINT ["node", "packages/standalone/cli.mjs"]
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["--lan", "--lan-port", "18901", "--data-dir", "/data"]

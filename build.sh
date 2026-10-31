@@ -28,5 +28,5 @@ docker build \
   -f Dockerfile .
 
 echo "==> 完成: ${IMAGE}:${TAG}"
-echo "    仅 LAN 网关运行: docker run -d -p 18901:18901 -v ofm-data:/data ${IMAGE}:${TAG}"
-echo "    首跑管理页(临时): docker run -d -p 18900:18900 -p 18901:18901 -v ofm-data:/data ${IMAGE}:${TAG}"
+echo "    仅 LAN 网关: docker run -d -p 18901:18901 -v ofm-data:/data ${IMAGE}:${TAG}"
+echo "    网关+管理(管理经 socat 透传到局域网): docker run -d -p 18900:18900 -p 18901:18901 -v ofm-data:/data ${IMAGE}:${TAG}"

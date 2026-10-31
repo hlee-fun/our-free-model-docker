@@ -14,15 +14,24 @@
 - `docker-0.1` 为本仓库的 Docker 改造批次，改造递增、上游升级重置。
 - 上游版本由 `build.sh` 自动取得（可用 `UPSTREAM_REF` 锁定到具体 tag 以复现）。
 
-## 策略（策略一：LAN 推理中继）
+## 策略（策略一：LAN 推理中继 + 管理端口局域网透传）
 服务有两个监听器，区别在**绑定地址**而非端口号：
-- **管理/本机 API 监听器**：强制 `loopback`（issue #216 未实现远程管理，不支持 `--host`）。**注意**：因为绑定在容器内 `127.0.0.1`，宿主用 `-p 18900:18900` 映射**无法触达**（实测宿主探测 HTTP 000，仅容器内健康检查可达）。要在宿主访问管理页须用 `--network host`（仅 Linux），或全程用 `docker exec` 调用管理 API（推荐，见运行）。
+- **管理/本机 API 监听器**：上游强制 `loopback`（issue #216 未实现远程管理，不支持 `--host`，绑定在 `127.0.0.1`）。**为使局域网其他设备也能打开管理页（你的明确需求），分两步解决：**
+  1. `socat` 透传：镜像内置 socat，对每个检测到的非 loopback IPv4 做转发 `<LAN_IP>:18900 → 127.0.0.1:18900`。
+     注意 socat **不能绑 `0.0.0.0`**（含 loopback，会与 app 的 `127.0.0.1:18900` 冲突导致 EADDRINUSE）。
+  2. 放行 Host 围栏：上游 `src/trust.js` 要求管理请求 Host 必须是 loopback 名，否则 403；
+     构建期 `docker/patch-trust.mjs` 给围栏加 `OFM_TRUSTED_HOSTS` 开关，入口脚本自动填入检测到的局域网 IP。
+     未设置该环境变量时行为与上游完全一致（仍只信任 loopback）。
+  管理页本身仍需 managementKey 登录。
+- **依赖**：socat 与 `OFM_TRUSTED_HOSTS` 都靠"容器能看到宿主网络接口"自动得到局域网 IP，
+  因此推荐 `--network host`（Linux，见 `local-test/start-local.sh`）。
+  若必须用桥接网络，需自行 `-e OFM_TRUSTED_HOSTS=<宿主IP>` 并 `-p 18900:18900` 映射（此时自动探测到的是容器内网 IP，不生效）。
 - **LAN 推理中继**：显式 `--lan` 后额外监听 `0.0.0.0`，仅转发推理路径，用独立 LAN Key。
 
-对外暴露的应是**后者（LAN 中继）**；前者（管理）不可对外。端口**数字只是默认值**，可随意改：
+对外暴露的应是**两者按需**：LAN 中继（18901）给下游客户端/网关调用；管理（18900，经 socat 透传）给需要跨设备管理的场景。端口**数字只是默认值**，可随意改：
 `--port` / `--lan-port` 改容器内监听号，`docker run -p <宿主>:<容器>` 再改宿主映射。默认用 `18900`(管理) / `18901`(LAN 中继) 仅为约定，非硬性要求。
 > 注：dsh **插件**侧确有 5+ 处端口配置，但本容器跑的是**独立(standalone)模式**，只有上述两个监听器；插件侧的端口与本容器无关。
-> 策略二（源码补丁放宽 loopback 暴露管理页）见 PLAN.md 第六章，MIT 允许但改动安全关键代码，本期不采用。
+> 策略二（直接源码补丁放宽 loopback）见 PLAN.md 第六章，MIT 允许但改动安全关键代码；本期改用等效且更安全的 **socat 透传** 实现同样效果，不采用策略二。
 
 ## 上游代码引入与「排除 DSH 依赖」做法
 - 构建期 `git clone --depth 1` 浅克隆上游（默认 `main`，可 `UPSTREAM_REF` 锁定到 release tag）。
@@ -67,7 +76,7 @@ const h={"Authorization":"Bearer "+FK,"Content-Type":"application/json"};
 若需在浏览器使用管理页：用 `--network host` 启动（仅 Linux），宿主开 `http://127.0.0.1:18900`（含 10 分钟内一次性登录链接，见 `docker logs ofm`）；配置完改回上面的桥接模式只暴露 18901。
 
 - `18901`（默认，可改）：LAN 推理中继（网关，对外，绑定 `0.0.0.0`）= OpenAI 兼容 `/v1/chat/completions` 等，用独立 **LAN Key**。
-- `18900`（默认，可改）：管理/本机 API（loopback，**宿主 `-p` 映射不可达**）。
+- `18900`（默认，可改）：管理/本机 API。上游绑定 loopback，镜像用 `socat` 透传到 `0.0.0.0`，故**局域网设备现在可直接访问**（仍需 managementKey 登录）。
 - `/data`：持久化 `settings.json`(含 `forwardKey`/`standaloneLanKey`)、渠道凭据、用量。
 
 ## 客户端接入（网关）

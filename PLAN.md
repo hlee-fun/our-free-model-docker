@@ -49,10 +49,10 @@
 
 - 容器内启动：`node packages/standalone/cli.mjs --lan --lan-port 18901`，数据目录 `OFM_HOME=/data`。
 - 端口分工：
-  - `18900` 管理 + 本机 API（**绑定容器内 127.0.0.1**，宿主 `-p 18900:18900` 映射**实测不可达/HTTP 000**，仅容器内或 `--network host` 可访问）——**强制 loopback 是 issue #216 的硬约束，与端口数字无关**
+  - `18900` 管理 + 本机 API（上游**强制绑定容器内 127.0.0.1**，**issue #216 的硬约束，与端口数字无关**）——**为使局域网其他设备也能管理，镜像内置 `socat` 做纯 TCP 转发 `0.0.0.0:18900 → 127.0.0.1:18900`**：保留原始 Host/Origin 头不触发上游 Host 信任围栏，管理页仍需 managementKey 登录；完全不改上游源码（策略一的等价增强，优于直接源码补丁）。
   - `18901` LAN 推理中继（`0.0.0.0`，对外暴露 = 设想中的「网关」）——端口数字仅为默认，`--lan-port` / `-p` 可随意改
 - 卷：`/data` 持久化 `settings.json`（含 `forwardKey`、`standaloneLanKey`、渠道开关）、`channel-credentials.json`、用量统计等。
-- 首跑流程：临时 `docker run -p 18900:18900` 从宿主访问管理页 → 用容器 stdout 打印的 10 分钟内一次性登录链接登录 → 配置免费车道 / 聚合渠道并生成 LAN Key → 之后不再暴露 18900，仅映射 18901 给下游（原 dsh 或其它 OpenAI 兼容客户端）。
+- 首跑流程：浏览器直接开 `http://<宿主IP>:18900`（socat 已透传）→ 用 Management Key（或容器 stdout 的 10 分钟内一次性登录链接）登录 → 配置免费车道 / 聚合渠道并确认 LAN Key → 下游客户端用 `http://<宿主IP>:18901/v1` + LAN Key 调用。
 
 > 该策略与设想拓扑**完全吻合**：对外暴露的就是「网关（推理中继）」，管理留在容器内。
 
@@ -88,16 +88,16 @@ CMD ["--lan", "--lan-port", "18901"]
 
 ---
 
-## 六、备选策略（策略二：源码补丁暴露管理 · MIT 允许）
+## 六、备选策略（策略二：源码补丁暴露管理 · MIT 允许 · 本期未采用）
 
 若需从容器外直接访问管理页，可在 `service.mjs` 增加 `OFM_BIND=0.0.0.0` 环境变量控制主监听器绑定，并放松 Host 信任围栏（仅放开网关路径，管理仍加锁）。
-**代价**：改动安全关键代码、上游升级需重打补丁。**建议优先用策略一。**
+**代价**：改动安全关键代码、上游升级需重打补丁。**本期改用等效且更安全的 `socat` 透传**（容器内 `0.0.0.0:18900 → 127.0.0.1:18900`，保留 Host 头不触发围栏），不改动上游源码，升级时只需重新提取文件即可。**已采用 socat 方案，不再走策略二。**
 
 ---
 
 ## 七、风险与注意
 
-1. **管理 loopback 限制（issue #216）**：官方未实现远程管理；策略一已规避，策略二需自行承担安全。
+1. **管理 loopback 限制（issue #216）**：官方未实现远程管理（主监听器强制 `127.0.0.1`）；本期用镜像内 `socat` 透传 `0.0.0.0:18900 → 127.0.0.1:18900` 在不改源码前提下达成局域网管理，管理页仍须 managementKey 登录。
 2. **EAC / 账号渠道 OAuth**：EAC 需 GitHub 登录 + star + 桌面指纹；账号渠道（Qoder / TRAE / 等）多有浏览器 / OAuth 登录，容器内 headless 难以完成。实际可用的是 **匿名免费车道 + 聚合渠道（用户自备 Key 存 settings.json）**。
 3. **上游 ToS / 限速**：免费车道按 session 限速（429 后自动恢复）；Kilo 免费池提示词可能被上游记录，勿发敏感内容。容器化不违反 MIT，但需遵守上游使用条款。
 4. **LAN Key ≠ 管理 Key**：中继用独立 LAN Key，且不转发管理数据；对外暴露 18901 时务必用防火墙 / 反向代理限制来源 IP。
@@ -140,7 +140,7 @@ CMD ["--lan", "--lan-port", "18901"]
 1. **上游引入方式**：构建时浅克隆（默认 `main`，可 `UPSTREAM_REF` 锁 tag）；且仅提取独立服务所需文件——通过上游自带 `standaloneSourceFiles()` 清单复制，排除 DSH 依赖部分。
 2. **版本号**：跟随上游自动获取（build.sh 读 `package.json.version`），约定 `v{上游}.docker.{批次}`。
 3. **暴露模型（非端口号决策）**：对外暴露的是 LAN 推理中继（绑定 `0.0.0.0`），管理监听器保持 loopback（issue #216 硬约束）。端口数字仅为默认（18900/18901），可经 `--port` / `--lan-port` 与 `docker run -p` 自由改；不把端口号当作架构决策。（dsh 插件侧 5+ 处端口属插件模式，与本独立容器无关。）
-4. **策略**：采用策略一（LAN 中继），不改源码。
+4. **策略**：采用策略一（LAN 中继），不改源码；管理端口局域网可达性以镜像内 `socat` 透传实现（等效于策略二但更安全、易升级）。
 5. **验证**：采纳构建期 `grep @deepseek-ai/` 校验 + 首跑 `docker run` 验证网关。
 
 下一步（已部分完成）：
@@ -149,6 +149,23 @@ CMD ["--lan", "--lan-port", "18901"]
 3. ✅ 首跑配置（已验证无头可用）：`docker run -d -p 18901:18901 -v ofm-data:/data --name ofm`，再用 `docker exec ofm node -e '{管理API读取forwardKey→轮换LAN Key}'` 生成 LAN Key（实测 36 位）；**管理 18900 绑定 loopback，宿主 `-p` 不可达**，故用 exec 而非浏览器。
 4. ✅ 网关验证：宿主经 `18901` + LAN Key 调 `/v1/models` 返回 200 + 真实模型清单；无 key 返回 401。
 5. 免费车道实际推理需上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，非容器化问题；更新已推送 `hlee.fun`（含 local-test 环境）。
+
+### 实施 0.2 增强：管理页局域网开放（socat 透传 + Host 围栏放行）
+- **需求**：用户要求管理页供局域网其他设备使用（原 18900 仅 loopback，LAN 设备访问 `<宿主IP>:18900` 报 10061）。
+- **关卡 1 · 连不上（10061）**：管理端口上游强制绑 `127.0.0.1`，LAN IP 无监听。
+  → 镜像内 `apt-get install socat`；`docker/entrypoint.sh` 探测所有非 loopback IPv4，对每个 IP 起
+  `socat TCP-LISTEN:18900,bind=<LAN_IP>,reuseaddr,fork TCP:127.0.0.1:18900 &`。
+  **坑**：socat 绝不能绑 `0.0.0.0`（0.0.0.0 含 loopback，会与 app 的 `127.0.0.1:18900` 冲突 → EADDRINUSE，
+  且 app 会"自动改选端口"跳到 18901，与 LAN 中继 18901 再冲突）。
+- **关卡 2 · 连上后 403**：上游 `src/trust.js` 的 `structuralReason()` 要求管理请求 Host 必须是 loopback 名
+  （`127.0.0.1`/`::1`/`localhost`），且 Origin/Referer 须与 Host 一致 —— 即 "Host 信任围栏"。
+  → 构建期 `docker/patch-trust.mjs` 给围栏加 `OFM_TRUSTED_HOSTS` 开关；入口脚本自动把探测到的 LAN IP 填入
+  （日志：`已放行局域网主机: OFM_TRUSTED_HOSTS=<宿主IP>`）。未设置该变量时行为与上游完全一致。
+- **另一个坑 · 端口被持久化**：app 在端口冲突时"自动改选可用端口"会把新端口写进 `settings.json` 的
+  `standalonePort`（曾变成 18901，与 `standaloneLanPort=18901` 撞车）。修复：把 `standalonePort` 改回 18900 再重启。
+- **实测（全通过）**：`<宿主IP>:18900/` = 200（管理页）、`127.0.0.1:18900/` = 200、
+  `<宿主IP>:18901/v1/models` + LAN Key = 200、无 Key = 401；局域网浏览器登录 `/session`（带同源 Origin）= 200 `{"ok":true}`。
+- **批次**：`v2.7.4-docker-0.2`（功能增强，批次递增符合约定）。重建后须用新镜像重建 `ofm` 容器。
 
 ### 实施 0.1 本地实测结论
 - 镜像构建通过；独立服务启动正常，打印管理一次性登录链接与 LAN API 地址（容器标记 healthy）。
@@ -170,10 +187,9 @@ CMD ["--lan", "--lan-port", "18901"]
   值亦记录在 `local-test/lankey.txt`（gitignore，不入库）。
 - **可复现**：`local-test/start-local.sh` 在 `local-test/data/settings.json` 缺失时自动注入同一固定值，
   因此清空数据卷后重跑仍能得到相同 Key。
-- **目视测试用 `--network host`**：管理页 `18900` 绑定容器内 loopback，普通 `-p` 映射不可达；
-  用 `--network host`（仅 Linux）使该 loopback 落到宿主 `127.0.0.1`，浏览器可开
-  `http://127.0.0.1:18900`（含 10 分钟内一次性登录链接，见 `docker logs ofm`）。
-  网关 `18901` 绑定 `0.0.0.0`，`http://127.0.0.1:18901/v1` + `Bearer <固定 Key>` 可直接调。
+- **目视测试用 `--network host`**：管理页 `18900` 上游强制绑定容器内 loopback，镜像内 `socat` 已将其透传到 `0.0.0.0:18900`，
+  因此**局域网其他设备**可直接开 `http://<宿主IP>:18900`（如 `http://<宿主IP>:18900`），粘贴 Management Key 登录；
+  网关 `18901` 绑定 `0.0.0.0`，`http://<宿主IP>:18901/v1` + `Bearer <固定 Key>` 可直接调。
 - 详见 [`local-test/README-local-test.md`](./local-test/README-local-test.md)。
 - **易混淆点（已踩坑）**：有两个 Key 用途不同——`standaloneLanKey`(固定 LAN Key) 仅用于 18901 网关 API；管理页 18900 登录框只认 `managementKey`(或 `forwardKey`)，不认 LAN Key。用 LAN Key 登管理页必失败。管理页也可用启动日志一次性链接 `#login=...`（10min）。
 
