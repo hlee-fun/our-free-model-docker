@@ -1,6 +1,6 @@
 # our-free-model-docker
 
-[English](README-en.md) | **简体中文**
+**简体中文** | [English](README-en.md)
 
 把 [dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的独立模式（standalone）**原样整合为 Docker 容器**，使其**可在局域网内被其他设备直接使用**。
 

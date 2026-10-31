@@ -1,6 +1,6 @@
 # our-free-model-docker
 
-**English** | [简体中文](README.md)
+[简体中文](README.md) | **English**
 
 Packages the **standalone** mode of [dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) into a Docker container **as-is**, so that it **can be used directly by other devices on the same LAN**.
 
