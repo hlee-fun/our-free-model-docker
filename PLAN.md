@@ -175,6 +175,7 @@ CMD ["--lan", "--lan-port", "18901"]
   `http://127.0.0.1:18900`（含 10 分钟内一次性登录链接，见 `docker logs ofm`）。
   网关 `18901` 绑定 `0.0.0.0`，`http://127.0.0.1:18901/v1` + `Bearer <固定 Key>` 可直接调。
 - 详见 [`local-test/README-local-test.md`](./local-test/README-local-test.md)。
+- **易混淆点（已踩坑）**：有两个 Key 用途不同——`standaloneLanKey`(固定 LAN Key) 仅用于 18901 网关 API；管理页 18900 登录框只认 `managementKey`(或 `forwardKey`)，不认 LAN Key。用 LAN Key 登管理页必失败。管理页也可用启动日志一次性链接 `#login=...`（10min）。
 
 ---
 

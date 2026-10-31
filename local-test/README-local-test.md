@@ -14,13 +14,24 @@
 
 ## 访问地址
 
-| 用途 | 地址 | 说明 |
+| 用途 | 地址 | 鉴权 |
 |------|------|------|
-| **网关（对外 / 局域网）** | `http://127.0.0.1:18901/v1` | OpenAI 兼容；`Authorization: Bearer <固定 LAN Key>` |
-| **管理页（仅本机）** | `http://127.0.0.1:18900` | `--network host` 下宿主 `127.0.0.1` 可达；需一次性登录链接 |
+| **网关（对外 / 局域网）** | `http://127.0.0.1:18901/v1` | `Authorization: Bearer <固定 LAN Key>` |
+| **管理页（仅本机）** | `http://127.0.0.1:18900` | 登录页「令牌」框粘贴 `<Management Key>` |
 
 > 管理页绑定容器内 `127.0.0.1`；`--network host` 让该 loopback 直接落到宿主，
 > 因此浏览器可开 `http://127.0.0.1:18900`。普通 `-p` 端口映射反而连不上（已在 PLAN 标注）。
+
+## ⚠️ 两个 Key 用途不同，别混（常见"Key 不行"根因）
+
+| Key | 用途 | 怎么拿到 |
+|-----|------|----------|
+| **固定 LAN Key** | **仅**网关 `18901` 的 OpenAI 兼容 API（`/v1/models`、`/v1/chat/completions`…） | `local-test/lankey.txt`；`start-local.sh` 启动后打印 |
+| **Management Key** | **仅**管理页 `18900` 登录（粘贴进登录框"令牌"字段） | `settings.json` 的 `managementKey`；`start-local.sh` 启动后打印 |
+
+- 管理页登录框**只认 `managementKey`（或 `forwardKey`）**，**不认 LAN Key**；用 LAN Key 登管理页必然失败。
+- 管理页也可用启动日志里的一次性链接 `#login=...`（10 分钟有效），但 `managementKey` 更稳定、不过期。
+- 取当前 Management Key：`docker exec ofm node -e 'console.log(JSON.parse(require("fs").readFileSync("/data/settings.json","utf8")).managementKey)'`
 
 ## 固定 LAN Key
 
@@ -36,12 +47,12 @@ LANKEY-local-fixed-2026-00000001
 
 ## 目视测试建议
 
-1. **网关存活**：浏览器/客户端打 `http://127.0.0.1:18901/v1/models`（带 Bearer 固定 Key）→ 应返回模型清单（200）。
+1. **网关存活**：浏览器/客户端打 `http://127.0.0.1:18901/v1/models`（带 Bearer 固定 LAN Key）→ 应返回模型清单（200）。
 2. **网关鉴权**：不带 Key 打同一地址 → 应 401。
-3. **管理页**：`docker restart ofm && docker logs ofm | grep -i login | tail -1` 取一次性登录链接，
-   浏览器打开 `http://127.0.0.1:18900/#login=...` 进入，查看渠道/车道状态、`API 接入` 中的 LAN Key。
+3. **管理页登录**：浏览器开 `http://127.0.0.1:18900`，在"令牌"框粘贴 **Management Key**（启动脚本已打印），点击登录 → 进入查看渠道/车道状态、`API 接入` 中的 LAN Key。
+   （备选：一次性链接 `docker restart ofm && docker logs ofm | grep -i login | tail -1` → 打开 `#login=...`）
 4. **实际推理**：需上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`，属上游运行时配置，与容器化无关）；
-   经 `18901/v1/chat/completions` 用固定 Key 发请求验证。
+   经 `18901/v1/chat/completions` 用固定 LAN Key 发请求验证。
 
 ## 维护
 

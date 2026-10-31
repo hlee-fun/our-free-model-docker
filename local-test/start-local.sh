@@ -49,9 +49,18 @@ else
 fi
 
 echo
+# 取管理密钥(managementKey, 仅容器内 root 可读宿主绑定文件)
+MGMT_KEY="$(docker exec "$CONTAINER" node -e 'console.log(JSON.parse(require("fs").readFileSync("/data/settings.json","utf8")).managementKey)' 2>/dev/null)"
+
 echo "=== 本地测试环境已就绪 (--network host) ==="
-echo "固定 LAN Key : $FIXED_LAN_KEY"
-echo "网关(对外)   : http://127.0.0.1:18901/v1   鉴权: Authorization: Bearer $FIXED_LAN_KEY"
-echo "管理页(本机) : http://127.0.0.1:18900  (需一次性登录链接, 见下)"
-echo "刷新登录链接 : docker restart $CONTAINER && docker logs $CONTAINER | grep -i login | tail -1"
+echo
+echo "【两个 Key 用途不同, 别混】"
+echo "  LAN Key (固定, 网关用) : $FIXED_LAN_KEY"
+echo "     -> 仅用于 18901 网关 API: Authorization: Bearer $FIXED_LAN_KEY"
+echo "  Management Key (管理页用): ${MGMT_KEY:-<读取失败>}"
+echo "     -> 仅用于 18900 管理页登录: 打开页后粘贴进『令牌』框 (稳定不过期)"
+echo
+echo "网关(对外)   : http://127.0.0.1:18901/v1"
+echo "管理页(本机) : http://127.0.0.1:18900  (粘贴上方 Management Key 登录; 也可用一次性链接)"
+echo "刷新一次性链接: docker restart $CONTAINER && docker logs $CONTAINER | grep -i login | tail -1"
 echo "停止容器     : docker stop $CONTAINER"
