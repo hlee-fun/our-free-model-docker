@@ -49,7 +49,7 @@
 
 - 容器内启动：`node packages/standalone/cli.mjs --lan --lan-port 18901`，数据目录 `OFM_HOME=/data`。
 - 端口分工：
-  - `18900` 管理 + 本机 API（loopback，仅容器内或临时端口转发访问，**不对外暴露**）——**强制 loopback 是 issue #216 的硬约束，与端口数字无关**
+  - `18900` 管理 + 本机 API（**绑定容器内 127.0.0.1**，宿主 `-p 18900:18900` 映射**实测不可达/HTTP 000**，仅容器内或 `--network host` 可访问）——**强制 loopback 是 issue #216 的硬约束，与端口数字无关**
   - `18901` LAN 推理中继（`0.0.0.0`，对外暴露 = 设想中的「网关」）——端口数字仅为默认，`--lan-port` / `-p` 可随意改
 - 卷：`/data` 持久化 `settings.json`（含 `forwardKey`、`standaloneLanKey`、渠道开关）、`channel-credentials.json`、用量统计等。
 - 首跑流程：临时 `docker run -p 18900:18900` 从宿主访问管理页 → 用容器 stdout 打印的 10 分钟内一次性登录链接登录 → 配置免费车道 / 聚合渠道并生成 LAN Key → 之后不再暴露 18900，仅映射 18901 给下游（原 dsh 或其它 OpenAI 兼容客户端）。
@@ -143,12 +143,19 @@ CMD ["--lan", "--lan-port", "18901"]
 4. **策略**：采用策略一（LAN 中继），不改源码。
 5. **验证**：采纳构建期 `grep @deepseek-ai/` 校验 + 首跑 `docker run` 验证网关。
 
-下一步：
-1. 在有 Docker 环境处执行 `./build.sh`（或 `UPSTREAM_REF=2.7.4 ./build.sh`）构建镜像。
-2. 构建/运行后复核独立路径无 `@deepseek-ai/*` 残留：容器内 `grep -rn "@deepseek-ai/" /app/src /app/packages/standalone`（预期无命中）。
-3. `docker run` 首跑：`docker logs` 取一次性登录链接 → 管理页登录 → 配置免费车道 / 聚合渠道 Key → 生成 LAN Key。
-4. 外部客户端经 `18901` 调 `/v1/chat/completions` 验证网关成功。
-5. 将 `build.sh`/`Dockerfile`/`README`/`PLAN` 更新推送到 `hlee.fun`（远端已验证）。
+下一步（已部分完成）：
+1. ✅ 构建：本地 `UPSTREAM_REF=v2.7.4 BATCH=0.1 bash ./build.sh` 成功，镜像 `our-free-model:v2.7.4-docker-0.1`（提取 103 个独立文件，自动排除 DSH 插件包）。
+2. ✅ 残留校验：`docker run --rm --entrypoint grep ... -rnE '(import|require)\b[^;]*@deepseek-ai/' /app/src /app/packages/standalone` → 无真正依赖引用（仅有 3 处 `business.mjs` 错误提示字符串提及，非 import）。
+3. ✅ 首跑配置（已验证无头可用）：`docker run -d -p 18901:18901 -v ofm-data:/data --name ofm`，再用 `docker exec ofm node -e '{管理API读取forwardKey→轮换LAN Key}'` 生成 LAN Key（实测 36 位）；**管理 18900 绑定 loopback，宿主 `-p` 不可达**，故用 exec 而非浏览器。
+4. ✅ 网关验证：宿主经 `18901` + LAN Key 调 `/v1/models` 返回 200 + 真实模型清单；无 key 返回 401。
+5. 待办：免费车道实际推理需上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，非容器化问题；推送更新到 `hlee.fun`。
+
+### 实施 0.1 本地实测结论
+- 镜像构建通过；独立服务启动正常，打印管理一次性登录链接与 LAN API 地址（容器标记 healthy）。
+- **关键修正**：管理端口 `18900` 绑定容器内 `127.0.0.1`，宿主 `-p 18900:18900` 映射返回 HTTP 000（不可达）；容器内健康检查正常。故"首跑开管理页"须改用 `docker exec` 管理 API 或 `--network host`，不能靠 `-p` 映射。已同步修正 README/PLAN。
+- 网关验证通过：LAN 中继 `18901`（0.0.0.0）用 LAN Key 调 `/v1/models` 返回 200 + 模型清单（`mimo-v2.6-flash-free` 等）；无 key 返回 401。
+- 排除 DSH 依赖真正生效：上游独立路径无任何 `@deepseek-ai/*` import/require。
+- 注意镜像内 `service.version` 打印为子包版本（如 2.7.1），而镜像 tag 用项目根版本（2.7.4），两者命名空间不同，属正常。
 
 ---
 

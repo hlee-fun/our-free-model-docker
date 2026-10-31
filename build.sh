@@ -12,8 +12,9 @@ UPSTREAM_REF="${UPSTREAM_REF:-main}"
 BATCH="${BATCH:-0.1}"
 IMAGE="${IMAGE:-our-free-model}"
 
-# 跟随上游获取版本号(读取独立包 package.json 的 version 字段)
-UPSTREAM_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/Ebony-Vinyl/dsh-our-free-model/${UPSTREAM_REF}/packages/standalone/package.json" \
+# 跟随上游获取版本号(读取项目根 package.json 的 version 字段 = 项目发布版本, 如 2.7.4;
+# 注意: packages/standalone/package.json 是子包版本, 会滞后, 不采用)
+UPSTREAM_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/Ebony-Vinyl/dsh-our-free-model/${UPSTREAM_REF}/package.json" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
 
 TAG="v${UPSTREAM_VERSION}-docker-${BATCH}"

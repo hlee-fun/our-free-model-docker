@@ -16,7 +16,7 @@
 
 ## 策略（策略一：LAN 推理中继）
 服务有两个监听器，区别在**绑定地址**而非端口号：
-- **管理/本机 API 监听器**：强制 `loopback`（issue #216 未实现远程管理，不支持 `--host`），只能容器内或临时转发访问。
+- **管理/本机 API 监听器**：强制 `loopback`（issue #216 未实现远程管理，不支持 `--host`）。**注意**：因为绑定在容器内 `127.0.0.1`，宿主用 `-p 18900:18900` 映射**无法触达**（实测宿主探测 HTTP 000，仅容器内健康检查可达）。要在宿主访问管理页须用 `--network host`（仅 Linux），或全程用 `docker exec` 调用管理 API（推荐，见运行）。
 - **LAN 推理中继**：显式 `--lan` 后额外监听 `0.0.0.0`，仅转发推理路径，用独立 LAN Key。
 
 对外暴露的应是**后者（LAN 中继）**；前者（管理）不可对外。端口**数字只是默认值**，可随意改：
@@ -45,22 +45,36 @@ docker run -d --name ofm \
   -p 18901:18901 \
   -v ofm-data:/data \
   our-free-model:latest
-
-# 首跑: 临时多开 18900 从宿主访问管理页, 登录并生成 LAN Key 后改用上面那条
-docker run -d --name ofm-setup \
-  -p 18900:18900 -p 18901:18901 \
-  -v ofm-data:/data \
-  our-free-model:latest
 ```
-- `18901`（默认，可改）：LAN 推理中继（网关，对外）= OpenAI 兼容 `/v1/chat/completions` 等，用独立 **LAN Key**。
-- `18900`（默认，可改）：管理/本机 API（loopback）。首跑临时 `-p 18900:18900` 打开管理页登录、生成 LAN Key；之后不再暴露。
-- `/data`：持久化 `settings.json`(含 `forwardKey`/`standaloneLanKey`)、渠道凭据、用量。
 
-首跑查看一次性登录链接：`docker logs ofm-setup`（10 分钟内有效，仅可兑换一次）。
+首跑配置（生成 LAN Key，**无需浏览器**，实测可用）：
+管理监听器绑定容器内 loopback，宿主 `-p 18900` 映射连不上。正确做法是在容器内用管理 API 生成 LAN Key：
+```sh
+docker exec ofm node -e '
+const fs=require("fs");
+const s=JSON.parse(fs.readFileSync("/data/settings.json","utf8"));
+const FK=s.forwardKey, base="http://127.0.0.1:18900";
+const h={"Authorization":"Bearer "+FK,"Content-Type":"application/json"};
+(async()=>{
+  let j=await (await fetch(base+"/api/management/lan/key",{headers:h})).json().catch(()=>({}));
+  if(!j.key) j=await (await fetch(base+"/api/management/lan/key/rotate",{method:"POST",headers:h,body:JSON.stringify({confirm:true})})).json().catch(()=>({}));
+  console.log("LAN_KEY="+j.key);
+})();
+'
+```
+复制输出的 `LAN_KEY=...` 值，交给下游客户端即可。
+
+若需在浏览器使用管理页：用 `--network host` 启动（仅 Linux），宿主开 `http://127.0.0.1:18900`（含 10 分钟内一次性登录链接，见 `docker logs ofm`）；配置完改回上面的桥接模式只暴露 18901。
+
+- `18901`（默认，可改）：LAN 推理中继（网关，对外，绑定 `0.0.0.0`）= OpenAI 兼容 `/v1/chat/completions` 等，用独立 **LAN Key**。
+- `18900`（默认，可改）：管理/本机 API（loopback，**宿主 `-p` 映射不可达**）。
+- `/data`：持久化 `settings.json`(含 `forwardKey`/`standaloneLanKey`)、渠道凭据、用量。
 
 ## 客户端接入（网关）
 下游（原 dsh 或其它 OpenAI 兼容客户端）指向 `http://<宿主IP>:18901/v1`，
-Authorization: `Bearer <LAN Key>`（在管理页 `API 接入` 查看 / 轮换）。
+Authorization: `Bearer <LAN Key>`（LAN Key 用上面 `docker exec` 命令生成 / 轮换）。
+
+> 备注：实测 `/v1/models` 经 LAN Key 返回 200 与模型清单；免费车道实际推理需要上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，与容器化无关。
 
 ## 文档
 完整方案与维护策略见 [`PLAN.md`](./PLAN.md)。

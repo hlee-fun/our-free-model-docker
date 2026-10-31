@@ -18,21 +18,8 @@ WORKDIR /src
 RUN git clone --depth 1 --branch "${UPSTREAM_REF}" https://github.com/Ebony-Vinyl/dsh-our-free-model /src \
  || (git clone --depth 1 https://github.com/Ebony-Vinyl/dsh-our-free-model /src && git -C /src checkout "${UPSTREAM_REF}")
 # 用上游自带清单提取「仅独立所需」文件 -> /dist (自动排除 DSH 依赖部分)
-RUN node --input-type=module -e '
-  import { standaloneSourceFiles } from "./scripts/pack-standalone.mjs";
-  import fs from "node:fs";
-  import path from "node:path";
-  const files = standaloneSourceFiles();
-  fs.mkdirSync("/dist", { recursive: true });
-  for (const f of files) {
-    const s = path.join("/src", f);
-    if (!fs.existsSync(s)) { console.error("MISSING in upstream:", f); process.exit(1); }
-    const d = path.join("/dist", f);
-    fs.mkdirSync(path.dirname(d), { recursive: true });
-    fs.copyFileSync(s, d);
-  }
-  console.log("Extracted", files.length, "standalone files");
-'
+COPY docker/extract-standalone.mjs /extract-standalone.mjs
+RUN node /extract-standalone.mjs
 
 FROM node:22-bookworm-slim AS runtime
 ARG UPSTREAM_VERSION=unknown
