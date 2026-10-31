@@ -1,6 +1,6 @@
 # our-free-model 独立服务 · 纯远程拉取镜像（无 build、无本地文件依赖）
 #
-# ⚠️ 唯一需改：image 默认值 → 你的远程镜像；也可用 OFM_IMAGE=<镜像> 覆盖（无需 .env）
+# 镜像已内置默认值，直接启动即可；换镜像用 OFM_IMAGE=<镜像> 覆盖（无需 .env）
 #
 #   docker compose up -d       启动
 #   docker compose logs -f ofm 看登录链接 / 放行主机
@@ -10,7 +10,7 @@ name: ofm
 
 services:
   ofm:
-    image: ${OFM_IMAGE:-your-registry.example.com/our-free-model:v2.7.4-docker-0.2}
+    image: ${OFM_IMAGE:-ghcr.io/hlee-fun/our-free-model-v2.7.4:latest}
     container_name: ofm
     restart: unless-stopped
 

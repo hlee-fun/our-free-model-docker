@@ -14,7 +14,7 @@
 | 项目 | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
 | 作者 | **Ebony-Vinyl** |
 | 许可 | **MIT** |
-| 容器使用版本 | 上游 `2.7.4`（镜像 tag `v2.7.4-docker-0.2`） |
+| 容器使用版本 | 上游 `2.7.4`（镜像 `ghcr.io/hlee-fun/our-free-model-v2.7.4:latest`） |
 
 镜像分发须保留上游 `LICENSE` 及第三方声明（`vendor/channel-pack/`、`vendor/magpie/`、`scripts/standalone-third-party.txt`）。
 
@@ -37,7 +37,7 @@
 纯远程拉取镜像，无本地构建、不依赖任何本地文件（数据存命名卷 `ofm-data`）。
 
 ```sh
-# 先改 docker-compose.yml 里的 image 为你的远程镜像（或用 OFM_IMAGE 覆盖）
+# 镜像地址已内置（换镜像用 OFM_IMAGE=<镜像> 覆盖）
 docker compose up -d
 docker compose logs -f ofm   # 管理页登录链接 / 已放行的局域网主机
 docker compose down          # 停止（卷保留）
