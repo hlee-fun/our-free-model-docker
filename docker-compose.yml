@@ -1,38 +1,34 @@
-# our-free-model 独立服务 · Docker Compose
+# our-free-model 独立服务 · 纯远程拉取镜像（无 build、无本地文件依赖）
 #
-# 纯远程拉取镜像：无 build 段、无 env_file、无宿主目录挂载（数据用命名卷 ofm-data）。
-# 镜像名用 ${OFM_IMAGE:-...} 占位：可直接改默认值，或运行时
-#   OFM_IMAGE=<你的镜像> docker compose up -d
+# ⚠️ 唯一需改：image 默认值 → 你的远程镜像；也可用 OFM_IMAGE=<镜像> 覆盖（无需 .env）
 #
-# 端口：18900 管理页（上游强制绑 127.0.0.1，由镜像内 socat 透传到局域网）
-#       18901 网关（0.0.0.0，OpenAI 兼容 /v1/*）
+#   docker compose up -d       启动
+#   docker compose logs -f ofm 看登录链接 / 放行主机
+#   docker compose down        停止（卷保留）
 
 name: ofm
 
 services:
   ofm:
-    # TODO: 改成你的远程镜像
     image: ${OFM_IMAGE:-your-registry.example.com/our-free-model:v2.7.4-docker-0.2}
-
     container_name: ofm
     restart: unless-stopped
 
-    # host 网络：容器内可见宿主局域网 IP，管理页自动透传。与 ports 互斥。
+    # host 网络：容器内可见宿主局域网 IP，管理页自动透传（与 ports 互斥）
     network_mode: host
 
     environment:
       OFM_HOME: /data
       TZ: Asia/Shanghai
-      # 容器内无 Bun 时 /v1/chat/completions 会 502，此变量恢复旧传输层（不需要可删）
+      # 容器内无 Bun 时推理会 502；此变量恢复旧传输层（不需要可删）
       OUR_FREE_MODEL_FREE_TRANSPORT: node
-      # 端口覆盖（一般无需改）
+      # 放行访问管理页的主机：host 网络自动探测，桥接网络须手动填宿主 IP
+      # OFM_TRUSTED_HOSTS: "<宿主IP>"
       # OFM_ADMIN_PORT: "18900"
       # OFM_LAN_PORT: "18901"
-      # 桥接网络下需手动指定放行主机，否则管理页访问被 Host 信任围栏 403
-      # OFM_TRUSTED_HOSTS: "<宿主IP>"
 
     volumes:
-      # settings.json（含 managementKey / LAN Key）、渠道凭据、用量统计
+      # settings.json（managementKey / LAN Key）、渠道凭据、用量统计
       - ofm-data:/data
 
     stop_grace_period: 20s
@@ -40,6 +36,6 @@ services:
 volumes:
   ofm-data: {}
 
-# 桥接网络改法：注释上面 network_mode，加
-#   ports: ["18901:18901", "18900:18900"]
-# 并取消注释 OFM_TRUSTED_HOSTS 填宿主局域网 IP。
+# 桥接网络改法：注释掉 network_mode: host，加
+#   ports: ["18901:18901", "18900:18900"]   # 网关对外 / 管理页（经 socat 透传后映射）
+# 并取消注释 OFM_TRUSTED_HOSTS 填宿主 IP（否则管理页被上游 Host 围栏 403）
