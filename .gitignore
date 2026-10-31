@@ -17,3 +17,8 @@ credentials*
 .git/
 .DS_Store
 Thumbs.db
+
+# 本地容器测试环境(运行态 + 固定测试 Key, 含本地凭据, 不入库)
+local-test/data/
+local-test/lankey.txt
+local-test/*.example

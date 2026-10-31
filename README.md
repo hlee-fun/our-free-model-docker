@@ -76,5 +76,18 @@ Authorization: `Bearer <LAN Key>`（LAN Key 用上面 `docker exec` 命令生成
 
 > 备注：实测 `/v1/models` 经 LAN Key 返回 200 与模型清单；免费车道实际推理需要上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，与容器化无关。
 
+## 本地测试环境 (local-test)
+
+`local-test/` 提供一键可复用的本机测试环境：以 `--network host` 启动容器（管理页 `18900`
+在宿主 `127.0.0.1` 直接可达，便于浏览器目视）、持久绑定 `local-test/data`、并自动注入**固定 LAN Key**
+（`LANKEY-local-fixed-2026-00000001`），保证所有本地测试复用同一网关鉴权值。
+
+```sh
+./local-test/start-local.sh
+```
+
+网关：`http://127.0.0.1:18901/v1` + `Authorization: Bearer LANKEY-local-fixed-2026-00000001`。
+详见 [`local-test/README-local-test.md`](./local-test/README-local-test.md)。
+
 ## 文档
 完整方案与维护策略见 [`PLAN.md`](./PLAN.md)。

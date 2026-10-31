@@ -148,7 +148,7 @@ CMD ["--lan", "--lan-port", "18901"]
 2. ✅ 残留校验：`docker run --rm --entrypoint grep ... -rnE '(import|require)\b[^;]*@deepseek-ai/' /app/src /app/packages/standalone` → 无真正依赖引用（仅有 3 处 `business.mjs` 错误提示字符串提及，非 import）。
 3. ✅ 首跑配置（已验证无头可用）：`docker run -d -p 18901:18901 -v ofm-data:/data --name ofm`，再用 `docker exec ofm node -e '{管理API读取forwardKey→轮换LAN Key}'` 生成 LAN Key（实测 36 位）；**管理 18900 绑定 loopback，宿主 `-p` 不可达**，故用 exec 而非浏览器。
 4. ✅ 网关验证：宿主经 `18901` + LAN Key 调 `/v1/models` 返回 200 + 真实模型清单；无 key 返回 401。
-5. 待办：免费车道实际推理需上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，非容器化问题；推送更新到 `hlee.fun`。
+5. 免费车道实际推理需上游传输层（Bun 或 `OUR_FREE_MODEL_FREE_TRANSPORT=node`），属上游运行时配置，非容器化问题；更新已推送 `hlee.fun`（含 local-test 环境）。
 
 ### 实施 0.1 本地实测结论
 - 镜像构建通过；独立服务启动正常，打印管理一次性登录链接与 LAN API 地址（容器标记 healthy）。
@@ -156,6 +156,25 @@ CMD ["--lan", "--lan-port", "18901"]
 - 网关验证通过：LAN 中继 `18901`（0.0.0.0）用 LAN Key 调 `/v1/models` 返回 200 + 模型清单（`mimo-v2.6-flash-free` 等）；无 key 返回 401。
 - 排除 DSH 依赖真正生效：上游独立路径无任何 `@deepseek-ai/*` import/require。
 - 注意镜像内 `service.version` 打印为子包版本（如 2.7.1），而镜像 tag 用项目根版本（2.7.4），两者命名空间不同，属正常。
+
+## 十二、固定测试 LAN Key 与本地测试环境（local-test）
+
+为支持重复本地测试，约定一个**固定 LAN Key** 并沉淀为一键测试环境：
+
+- **固定 LAN Key**：`LANKEY-local-fixed-2026-00000001`
+- **固化机制**（已实测）：上游 `packages/standalone/service.mjs:187-190` 仅在
+  `standaloneLanKey` 为空字符串或**等于 `forwardKey`** 时才重新随机生成；
+  写入一个「非空且 ≠ forwardKey」的固定值即被永久沿用。实现：首次启动生成
+  `settings.json` 后 `docker stop`，以 root 身份改写 `standaloneLanKey` 为固定值再 `docker start`。
+- **持久化**：`local-test/data/`（bind mount）保存 `settings.json`，容器重启/重建均沿用该 Key；
+  值亦记录在 `local-test/lankey.txt`（gitignore，不入库）。
+- **可复现**：`local-test/start-local.sh` 在 `local-test/data/settings.json` 缺失时自动注入同一固定值，
+  因此清空数据卷后重跑仍能得到相同 Key。
+- **目视测试用 `--network host`**：管理页 `18900` 绑定容器内 loopback，普通 `-p` 映射不可达；
+  用 `--network host`（仅 Linux）使该 loopback 落到宿主 `127.0.0.1`，浏览器可开
+  `http://127.0.0.1:18900`（含 10 分钟内一次性登录链接，见 `docker logs ofm`）。
+  网关 `18901` 绑定 `0.0.0.0`，`http://127.0.0.1:18901/v1` + `Bearer <固定 Key>` 可直接调。
+- 详见 [`local-test/README-local-test.md`](./local-test/README-local-test.md)。
 
 ---
 
