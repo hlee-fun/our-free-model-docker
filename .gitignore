@@ -1,0 +1,19 @@
+# 运行期数据卷(凭据/用量/锁), 不入库
+/data/
+OFM_HOME/
+
+# 依赖(运行期零依赖; 仅本地开发可能生成)
+node_modules/
+
+# 日志
+*.log
+
+# 环境/凭据
+.env
+*.token
+credentials*
+
+# 系统/编辑器
+.git/
+.DS_Store
+Thumbs.db
