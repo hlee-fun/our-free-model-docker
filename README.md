@@ -15,8 +15,13 @@
 - 上游版本由 `build.sh` 自动取得（可用 `UPSTREAM_REF` 锁定到具体 tag 以复现）。
 
 ## 策略（策略一：LAN 推理中继）
-LAN 推理中继（`--lan --lan-port 18901`，监听 `0.0.0.0`，仅转发推理）对外暴露为网关；
-管理页与本机 API 留 `loopback:18900`（容器内访问 / 临时端口转发）。
+服务有两个监听器，区别在**绑定地址**而非端口号：
+- **管理/本机 API 监听器**：强制 `loopback`（issue #216 未实现远程管理，不支持 `--host`），只能容器内或临时转发访问。
+- **LAN 推理中继**：显式 `--lan` 后额外监听 `0.0.0.0`，仅转发推理路径，用独立 LAN Key。
+
+对外暴露的应是**后者（LAN 中继）**；前者（管理）不可对外。端口**数字只是默认值**，可随意改：
+`--port` / `--lan-port` 改容器内监听号，`docker run -p <宿主>:<容器>` 再改宿主映射。默认用 `18900`(管理) / `18901`(LAN 中继) 仅为约定，非硬性要求。
+> 注：dsh **插件**侧确有 5+ 处端口配置，但本容器跑的是**独立(standalone)模式**，只有上述两个监听器；插件侧的端口与本容器无关。
 > 策略二（源码补丁放宽 loopback 暴露管理页）见 PLAN.md 第六章，MIT 允许但改动安全关键代码，本期不采用。
 
 ## 上游代码引入与「排除 DSH 依赖」做法
@@ -47,8 +52,8 @@ docker run -d --name ofm-setup \
   -v ofm-data:/data \
   our-free-model:latest
 ```
-- `18901`：LAN 推理中继（网关，对外）= OpenAI 兼容 `/v1/chat/completions` 等，用独立 **LAN Key**。
-- `18900`：管理/本机 API（loopback）。首跑临时 `-p 18900:18900` 打开管理页登录、生成 LAN Key；之后不再暴露。
+- `18901`（默认，可改）：LAN 推理中继（网关，对外）= OpenAI 兼容 `/v1/chat/completions` 等，用独立 **LAN Key**。
+- `18900`（默认，可改）：管理/本机 API（loopback）。首跑临时 `-p 18900:18900` 打开管理页登录、生成 LAN Key；之后不再暴露。
 - `/data`：持久化 `settings.json`(含 `forwardKey`/`standaloneLanKey`)、渠道凭据、用量。
 
 首跑查看一次性登录链接：`docker logs ofm-setup`（10 分钟内有效，仅可兑换一次）。

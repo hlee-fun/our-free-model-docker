@@ -49,8 +49,8 @@
 
 - 容器内启动：`node packages/standalone/cli.mjs --lan --lan-port 18901`，数据目录 `OFM_HOME=/data`。
 - 端口分工：
-  - `18900` 管理 + 本机 API（loopback，仅容器内或临时端口转发访问，**不对外暴露**）
-  - `18901` LAN 推理中继（`0.0.0.0`，对外暴露 = 设想中的「网关」）
+  - `18900` 管理 + 本机 API（loopback，仅容器内或临时端口转发访问，**不对外暴露**）——**强制 loopback 是 issue #216 的硬约束，与端口数字无关**
+  - `18901` LAN 推理中继（`0.0.0.0`，对外暴露 = 设想中的「网关」）——端口数字仅为默认，`--lan-port` / `-p` 可随意改
 - 卷：`/data` 持久化 `settings.json`（含 `forwardKey`、`standaloneLanKey`、渠道开关）、`channel-credentials.json`、用量统计等。
 - 首跑流程：临时 `docker run -p 18900:18900` 从宿主访问管理页 → 用容器 stdout 打印的 10 分钟内一次性登录链接登录 → 配置免费车道 / 聚合渠道并生成 LAN Key → 之后不再暴露 18900，仅映射 18901 给下游（原 dsh 或其它 OpenAI 兼容客户端）。
 
@@ -139,7 +139,7 @@ CMD ["--lan", "--lan-port", "18901"]
 
 1. **上游引入方式**：构建时浅克隆（默认 `main`，可 `UPSTREAM_REF` 锁 tag）；且仅提取独立服务所需文件——通过上游自带 `standaloneSourceFiles()` 清单复制，排除 DSH 依赖部分。
 2. **版本号**：跟随上游自动获取（build.sh 读 `package.json.version`），约定 `v{上游}.docker.{批次}`。
-3. **端口**：局域网网关暴露 **18901**（LAN 推理中继，0.0.0.0）；管理 18900 留 loopback，仅首跑临时转发。
+3. **暴露模型（非端口号决策）**：对外暴露的是 LAN 推理中继（绑定 `0.0.0.0`），管理监听器保持 loopback（issue #216 硬约束）。端口数字仅为默认（18900/18901），可经 `--port` / `--lan-port` 与 `docker run -p` 自由改；不把端口号当作架构决策。（dsh 插件侧 5+ 处端口属插件模式，与本独立容器无关。）
 4. **策略**：采用策略一（LAN 中继），不改源码。
 5. **验证**：采纳构建期 `grep @deepseek-ai/` 校验 + 首跑 `docker run` 验证网关。
 
