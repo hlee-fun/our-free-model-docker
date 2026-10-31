@@ -43,6 +43,24 @@ docker compose logs -f ofm   # 管理页登录链接 / 已放行的局域网主�
 docker compose down          # 停止（卷保留）
 ```
 
+## 首次使用：获取你自己的两个 Key
+
+**镜像不含任何 Key**（`/data` 为卷，首次启动才随机生成），因此**每台部署的 Key 都不同、且只有你自己的容器里才有**：
+- 分发镜像**不会**泄露 Key；
+- 也**无法**由镜像作者预先告知具体值——请在自己的容器启动后读取。
+
+```sh
+# 方式1：管理页一次性登录链接（首启 10 分钟内有效，仅可兑换一次）
+docker compose logs ofm | grep -i login
+
+# 方式2：直接读取（最稳，随时可用）
+docker exec ofm node -e 'const j=JSON.parse(require("fs").readFileSync("/data/settings.json","utf8"));console.log("LAN Key:",j.standaloneLanKey);console.log("Management Key:",j.managementKey)'
+```
+
+LAN Key 也可在管理页「API 接入」查看 / 轮换；`Management Key` 无轮换接口，需按需要改 `/data/settings.json`（停容器后以 root 改写，值须非空且不同于 `forwardKey`，否则会被重新随机）。
+
+> 服务开放后 Key 即唯一鉴权：请定期轮换 LAN Key，并避免把管理页 `18900` 直接暴露到公网。
+
 ## 环境变量（可选）
 
 | 变量 | 默认 | 说明 |
