@@ -14,7 +14,7 @@
 | 项目 | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
 | 作者 | **Ebony-Vinyl** |
 | 许可 | **MIT** |
-| 锁定版本 | `2.7.4` |
+| 容器使用版本 | 上游 `2.7.4`（镜像 tag `v2.7.4-docker-0.2`） |
 
 镜像分发须保留上游 `LICENSE` 及第三方声明（`vendor/channel-pack/`、`vendor/magpie/`、`scripts/standalone-third-party.txt`）。
 
@@ -50,14 +50,6 @@ docker compose down          # 停止（卷保留）
 | `OUR_FREE_MODEL_FREE_TRANSPORT` | `node` | 容器内无 Bun 时推理会 502，此变量恢复旧传输层 |
 | `OFM_TRUSTED_HOSTS` | 自动探测 | 放行访问管理页的主机；桥接网络需手动填宿主 IP |
 | `OFM_ADMIN_PORT` / `OFM_LAN_PORT` | `18900` / `18901` | 管理端口 / 网关端口 |
-
-## 构建镜像（可选）
-
-```sh
-BATCH=0.2 UPSTREAM_REF=2.7.4 ./build.sh   # → our-free-model:v2.7.4-docker-0.2
-```
-
-版本号 `v{上游}.docker.{批次}`，上游版本由 `build.sh` 自动读取。
 
 ## 备注
 
