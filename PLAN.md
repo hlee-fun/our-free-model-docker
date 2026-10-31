@@ -23,7 +23,7 @@
 2. **独立模式已成体系**
    - 入口 `packages/standalone/cli.mjs`（脚本 `start:standalone`），明确不依赖 dsh / Cordis / 宿主凭据。
    - 独立包 `our-free-model-standalone` 的 `package.json` **无 `@deepseek-ai/dsh-*` 运行时依赖**（仅有 React/Vite 等 devDependencies，仅用于构建前端）。
-   - 打包清单 `scripts/pack-standalone.mjs` 刻意**排除** `adapter/` 与 `src/adapter.js`（那是唯一允许 `import @deepseek-ai/*` 的位置），证明独立路径已与 dsh 内核解耦。
+   - 打包清单 `scripts/pack-standalone.mjs` 的 `standaloneSourceFiles()` 列出「独立服务真正需要的精确文件」（`packages/standalone/*`、`src/<特定文件>.js`、`vendor/channel-pack/qoder-auth-wasm.wasm`、LICENSE 等）。DSH 内核耦合的**插件代码根本不在此清单内**——这才是独立路径与 dsh 解耦的实质。注：早期核查曾误记「清单排除 `src/adapter.js`」，实际 `src/adapter.js` 在清单中（为独立版 adapter，无 `@deepseek-ai/*` 依赖）；真正被排除的是插件包本身。本仓库 Dockerfile 直接调用该清单提取文件，自动排除 DSH 依赖且随上游同步。
 
 3. **网关已内建**：独立服务提供 OpenAI 兼容推理 API —— `GET /v1/models`、`POST /v1/chat/completions`、`POST /v1/responses`、`POST /v1/messages`（含 Anthropic 形态）。这正是设想中的「网关」。
 
@@ -109,7 +109,7 @@ CMD ["--lan", "--lan-port", "18901"]
 
 采用 `v{上游}.docker.{批次}` 形式：
 
-- `v2.7.4-docker-0.1` 中 **`2.7.4` 跟随上游项目版本**（dsh-our-free-model 的 release tag）；
+- `v2.7.4-docker-0.1` 中 **`2.7.4` 跟随上游项目版本**（dsh-our-free-model 的 release tag）；构建时由 `build.sh` 自动读取上游 `packages/standalone/package.json` 的 `version` 字段取得，无需手填；`UPSTREAM_REF` 可锁定到具体 tag（如 `2.7.4`）以复现。
 - **`docker-0.1` 为本项目的「Docker 改造批次」**，`-0.1` 表示首次打包；后续每次对镜像 / 补丁 / Dockerfile / 说明的修改递增批次号（如 `-0.2`）；上游升级到新版本则重置批次从 `-0.1` 起（如 `v2.8.0-docker-0.1`）。
 - 镜像 tag 与源码分支 / tag 同名，便于回溯。首个发布标签示例：**`v2.7.4-docker-0.1`**。
 
@@ -129,23 +129,32 @@ CMD ["--lan", "--lan-port", "18901"]
 本项将使用 **本地 git** 与 **PNote 的 git**（测试）协同维护 Docker 改造源码、补丁与使用说明：
 
 - **本地 git**：在 workspace（`/home/lee/文档/ofm`）建立仓库 / 分支，跟踪上游源码快照与我们的 `Dockerfile`、补丁、使用说明。
-- **PNote 的 git**：作为测试 / 镜像同步的另一远端，验证跨仓库推送与回溯（实际 remote 待提供）。
+- **PNote 的 git**：远端 `https://hlee.fun/git/our-free-model-docker.git` 已建立并验证可读写（`main` 分支已推送骨架）。本地 `.git/config` 含访问 token（明文），建议后续改用 SSH 或凭据管理器。
 - **建议目录**：`dsh-ofm-docker/`（含 `Dockerfile`、`docker/` 补丁、`README`、`.gitignore` 排除 `.git` / 凭据 / `node_modules`）。
 - 版本标签按第八节规则（`v2.7.4-docker-0.1`）。
 
-## 十一、待确认 / 批准后执行的下一步
+## 十一、决策记录与下一步（已确认）
 
-1. 拉取上游仓库并切到指定 release tag（如 `2.7.4`），在 `dsh-ofm-docker/` 子目录纳入本地 git 跟踪（第十节）。
-2. 验证独立路径无 dsh 依赖（grep）+ 本地 `npm run start:standalone` 跑通。
-3. 按策略一编写并构建镜像（多阶段可选）。
-4. 本地 `docker run` 验证：管理页登录 → 生成 LAN Key → 外部客户端经 `18901` 调用 `/v1/chat/completions` 成功。
-5. 产出可复用镜像（tag `v2.7.4-docker-0.1`）+ 使用说明（含许可证归属与上游 ToS 提示）；按第十节推送到本地 git 与 PNote 的 git（测试）。
+用户已拍板以下 5 项，落地据此执行：
+
+1. **上游引入方式**：构建时浅克隆（默认 `main`，可 `UPSTREAM_REF` 锁 tag）；且仅提取独立服务所需文件——通过上游自带 `standaloneSourceFiles()` 清单复制，排除 DSH 依赖部分。
+2. **版本号**：跟随上游自动获取（build.sh 读 `package.json.version`），约定 `v{上游}.docker.{批次}`。
+3. **端口**：局域网网关暴露 **18901**（LAN 推理中继，0.0.0.0）；管理 18900 留 loopback，仅首跑临时转发。
+4. **策略**：采用策略一（LAN 中继），不改源码。
+5. **验证**：采纳构建期 `grep @deepseek-ai/` 校验 + 首跑 `docker run` 验证网关。
+
+下一步：
+1. 在有 Docker 环境处执行 `./build.sh`（或 `UPSTREAM_REF=2.7.4 ./build.sh`）构建镜像。
+2. 构建/运行后复核独立路径无 `@deepseek-ai/*` 残留：容器内 `grep -rn "@deepseek-ai/" /app/src /app/packages/standalone`（预期无命中）。
+3. `docker run` 首跑：`docker logs` 取一次性登录链接 → 管理页登录 → 配置免费车道 / 聚合渠道 Key → 生成 LAN Key。
+4. 外部客户端经 `18901` 调 `/v1/chat/completions` 验证网关成功。
+5. 将 `build.sh`/`Dockerfile`/`README`/`PLAN` 更新推送到 `hlee.fun`（远端已验证）。
 
 ---
 
 ### 参考（已核查的仓库事实）
 - `package.json`：version 2.7.4，engines `^22.19.0 || >=24.0.0`，license MIT，peerDependencies 均为 `@deepseek-ai/*`（仅插件模式需要）。
 - `packages/standalone/package.json`：name `our-free-model-standalone`，**无运行时依赖**。
-- `scripts/pack-standalone.mjs`：sourceFiles 刻意排除 `adapter/` 与 `src/adapter.js`。
+- `scripts/pack-standalone.mjs`：`standaloneSourceFiles()` 给出独立服务精确文件清单（含 `src/adapter.js` 独立版）；DSH 耦合的插件代码不在清单内。本仓库构建期直接调用该清单提取文件。
 - `packages/standalone/cli.mjs`：支持 `--port / --data-dir / --lan / --lan-port / --no-refresh`，无 `--host`。
 - `packages/standalone/README.md`：明确 issue #216（Docker 远程管理）未实现，LAN 中继为官方支持的容器推理接入方式。
