@@ -36,6 +36,11 @@ RUN node /patch-trust.mjs
 # 修复局域网访问时前端 baseUrl 写死 127.0.0.1 导致 API/跳转失败(自动获取, 非固定值)。
 COPY docker/patch-baseurl.mjs /patch-baseurl.mjs
 RUN node /patch-baseurl.mjs
+# 容器化补丁: 让 EAC router 各类「添加账号」登录流(临时 OAuth 回调服务)的绑定地址
+# 与对外 URL 改用 OFM_LAN_IP, 修复局域网下写成 127.0.0.1 导致设备连不到宿主。
+# 未设置 OFM_LAN_IP 时行为与上游完全一致(127.0.0.1)。
+COPY docker/patch-lan-login.mjs /patch-lan-login.mjs
+RUN node /patch-lan-login.mjs
 # socat: 把 loopback 的管理端口透传到局域网(纯 TCP 转发, 不改上游源码)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends socat \

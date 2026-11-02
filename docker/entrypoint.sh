@@ -12,12 +12,35 @@
 #
 # 可用环境变量(均可选, 不设即用上游默认):
 #   OFM_TRUSTED_HOSTS  放行访问管理页的主机列表(逗号分隔); 不设则自动探测非 loopback IPv4
+#   OFM_LAN_IP         EAC router 各类「添加账号」登录回调使用的局域网主 IP; 不设则自动探测。
+#                      设为该 IP 后, 临时 OAuth 回调服务会绑定并在此 IP 上对外展示链接,
+#                      使局域网其他设备能正常完成登录(否则写死 127.0.0.1, 设备连不到宿主)。
 #   OFM_ADMIN_PORT     管理端口, 默认 18900
 #   OFM_LAN_PORT       网关(LAN 中继)端口, 默认 18901
 set -e
 
 ADMIN_PORT="${OFM_ADMIN_PORT:-18900}"
 LAN_PORT="${OFM_LAN_PORT:-18901}"
+
+# EAC router 登录回调用的局域网主 IP: 手动指定优先; 未指定则自动探测
+# (排除 docker 网桥 172.16/12、链路本地 169.254 等, 取首个真实局域网 IPv4)。
+if [ -z "$OFM_LAN_IP" ]; then
+  OFM_LAN_IP="$(node -e '
+    const os=require("os");const n=os.networkInterfaces();const out=[];
+    for(const k in n){for(const a of n[k]){
+      if(a.family==="IPv4"&&!a.internal){
+        const ip=a.address;
+        if(ip.startsWith("172.")||ip.startsWith("169.254.")) continue;
+        out.push(ip);
+      }
+    }}
+    process.stdout.write(out[0]||"");
+  ')"
+  if [ -n "$OFM_LAN_IP" ]; then
+    echo "已自动探测局域网主 IP (OFM_LAN_IP): $OFM_LAN_IP"
+  fi
+fi
+if [ -n "$OFM_LAN_IP" ]; then export OFM_LAN_IP; fi
 
 # 上游 Host 信任围栏默认只认 loopback; 经 docker/patch-trust.mjs 补丁后,
 # 可用 OFM_TRUSTED_HOSTS 额外放行局域网 IP, 使管理页对其他设备可用。

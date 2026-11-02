@@ -7,9 +7,10 @@
 > **免责声明**：本项目**仅对上游代码做原样整合与容器化打包**。上游的功能、内容、模型与服务质量**均与本人无关**，版权与责任归原作者所有；本仓库不包含上游源码，也未对其内容作任何修改。
 >
 > **内容无变更**：上游代码原样使用，仅在构建时从上游浅克隆后打包。
-> 仅两处极小补丁（均可在不设置对应环境变量时退回上游原行为，不构成功能修改）：
+> 仅三处极小补丁（均可在不设置对应环境变量时退回上游原行为，不构成功能修改）：
 > - `docker/patch-trust.mjs` 对 `src/trust.js` 加了一个 `OFM_TRUSTED_HOSTS` 开关，放行局域网 Host 围栏（否则管理页 `403`）；
 > - `docker/patch-baseurl.mjs` 让管理页 `/api/management/summary` 按**请求实际 Host 头**回写 `baseUrl`，修复局域网访问时前端拿到的 API 基地址写死为 `127.0.0.1` 导致「API/跳转仍是本机回环、页面打不开」的问题（地址自动获取，非固定值）。
+> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / Trae / LobsterAI / Raccoon / Carrier）的绑定地址与对外回调 URL 改用 `OFM_LAN_IP`，修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题（未设置 `OFM_LAN_IP` 时行为与上游完全一致）。
 > `socat` 为镜像内附加组件，同样不改动上游代码。
 
 ## 上游归属
@@ -34,6 +35,7 @@
 
 - **网关**：上游本就监听 `0.0.0.0`，容器化后对局域网天然可用。
 - **管理页**：上游绑死 loopback，局域网设备访问会 `10061`；镜像用 `socat` 按局域网 IP **自动探测并透传**（IP 由 `hostname -I` 实时获取，非写死），并用 `OFM_TRUSTED_HOSTS` 放行上游 Host 围栏（否则 `403`）；同时 `patch-baseurl.mjs` 让管理页 API 基地址随访问地址自动回写，避免前端把请求/跳转发回来访者自己的 `127.0.0.1`——**这是本镜像相对原项目的主要增强**。
+- **EAC router「添加账号」登录**：在管理页里给各渠道（Loomy 微信 / Trae / LobsterAI / Raccoon / Carrier 等）添加账号时，上游会在本机起一个临时 OAuth 回调服务，并把回调地址写死成 `http://127.0.0.1:<随机端口>/...`。局域网设备浏览器打开该链接会指向自己本机、连不到宿主，登录无法进行。`patch-lan-login.mjs` 让这些回调服务的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或由你手动指定），使局域网设备能正常完成登录。**地址自动获取，非固定值。**
 - 两个 Key **不互通**：LAN Key 只给 18901 网关，Management Key 只给 18900 登录；都在 `/data/settings.json`（`standaloneLanKey` / `managementKey`）。
 - 端口为默认值，可用 `OFM_ADMIN_PORT` / `OFM_LAN_PORT` 改。
 
@@ -72,10 +74,12 @@ LAN Key 也可在管理页「API 接入」查看 / 轮换；`Management Key` 无
 |------|------|------|
 | `OUR_FREE_MODEL_FREE_TRANSPORT` | `node` | 容器内无 Bun 时推理会 502，此变量恢复旧传输层 |
 | `OFM_TRUSTED_HOSTS` | 自动探测 | 放行访问管理页的主机；桥接网络需手动填宿主 IP |
+| `OFM_LAN_IP` | 自动探测（首个非 docker 网桥的局域网 IPv4） | EAC router「添加账号」登录回调使用的局域网主 IP；手动指定可覆盖自动探测（如多网卡场景） |
 | `OFM_ADMIN_PORT` / `OFM_LAN_PORT` | `18900` / `18901` | 管理端口 / 网关端口 |
 
 ## 备注
 
 - 免费车道额度由上游控制（可能返回 `429 Free usage limit reached`），与容器化无关。
 - **页脚版本显示 `2.7.1` 是上游遗留**：上游根 `package.json` 已是 `2.8.0`，但子包 `packages/standalone/package.json` 的 `version` 字段未随发版更新（仍为 `2.7.1`），管理页页脚读的是该子包版本。这是原作者源码未同步，**非本镜像问题，也未作修改**（本仓库坚持「原样整合」，不改动上游内容）。
+- **模型工作台提示 `Magpie engine binary is unavailable` 是上游限制**：上游 `vendor/magpie/engine.json` 仅提供 `win32-x64` 平台的引擎二进制，Linux 容器（包括本镜像）下 `status().available` 恒为 `false`，故模型工作台里 Magpie 引擎显示不可用。**这是上游平台支持范围问题，非容器化导致**；本仓库坚持「原样整合」、不编译注入任何二进制，故不会绕过该限制。若需使用 Magpie，请在 Windows 宿主上直接运行上游原版。
 - 本仓库的 `PLAN.md` 与本地测试文件不入库，仅存在于本地工作副本。

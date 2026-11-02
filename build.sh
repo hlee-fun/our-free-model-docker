@@ -3,13 +3,14 @@
 # 上游版本跟随: 自动读取上游 packages/standalone/package.json 的 version 字段.
 #
 # 用法:
-#   ./build.sh                        -> UPSTREAM_REF=v2.8.0, 自动取上游版本, BATCH=0.1
+#   ./build.sh                        -> UPSTREAM_REF=v2.8.0, 自动取上游版本, BATCH=0.3
 #   UPSTREAM_REF=v2.8.0 ./build.sh     -> 锁定上游 tag v2.8.0, 复现可构建
-#   BATCH=0.2 ./build.sh              -> 同一上游, 新批次
+#   BATCH=0.4 ./build.sh              -> 同一上游, 新批次
+#   (上游 git 不可达时, 用 Dockerfile.patch 基于已拉取的 ghcr 镜像叠加补丁层, 无需重新 clone)
 set -euo pipefail
 
 UPSTREAM_REF="${UPSTREAM_REF:-v2.8.0}"
-BATCH="${BATCH:-0.1}"
+BATCH="${BATCH:-0.3}"
 # 镜像名: 远程拉取/推送统一为 ghcr.io/hlee-fun/our-free-model:latest
 # (版本信息通过 tag 副标签保留: ghcr.io/hlee-fun/our-free-model:v{上游}-docker-{批次})
 IMAGE="${IMAGE:-ghcr.io/hlee-fun/our-free-model}"
