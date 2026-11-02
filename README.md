@@ -16,7 +16,7 @@
 | 项目 | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
 | 作者 | **Ebony-Vinyl** |
 | 许可 | **MIT** |
-| 容器使用版本 | 上游 `2.7.4`（镜像 `ghcr.io/hlee-fun/our-free-model-v2.7.4:latest`） |
+| 容器使用版本 | 上游 `2.8.0`（镜像 `ghcr.io/hlee-fun/our-free-model-v2.8.0:latest`） |
 
 镜像分发须保留上游 `LICENSE` 及第三方声明（`vendor/channel-pack/`、`vendor/magpie/`、`scripts/standalone-third-party.txt`）。
 

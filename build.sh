@@ -3,12 +3,12 @@
 # 上游版本跟随: 自动读取上游 packages/standalone/package.json 的 version 字段.
 #
 # 用法:
-#   ./build.sh                        -> UPSTREAM_REF=main, 自动取上游版本, BATCH=0.1
-#   UPSTREAM_REF=2.7.4 ./build.sh     -> 锁定上游 tag 2.7.4, 复现可构建
+#   ./build.sh                        -> UPSTREAM_REF=v2.8.0, 自动取上游版本, BATCH=0.1
+#   UPSTREAM_REF=v2.8.0 ./build.sh     -> 锁定上游 tag v2.8.0, 复现可构建
 #   BATCH=0.2 ./build.sh              -> 同一上游, 新批次
 set -euo pipefail
 
-UPSTREAM_REF="${UPSTREAM_REF:-main}"
+UPSTREAM_REF="${UPSTREAM_REF:-v2.8.0}"
 BATCH="${BATCH:-0.1}"
 IMAGE="${IMAGE:-our-free-model}"
 
