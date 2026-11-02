@@ -80,6 +80,5 @@ LAN Key 也可在管理页「API 接入」查看 / 轮换；`Management Key` 无
 ## 备注
 
 - 免费车道额度由上游控制（可能返回 `429 Free usage limit reached`），与容器化无关。
-- **页脚版本显示 `2.7.1` 是上游遗留**：上游根 `package.json` 已是 `2.8.0`，但子包 `packages/standalone/package.json` 的 `version` 字段未随发版更新（仍为 `2.7.1`），管理页页脚读的是该子包版本。这是原作者源码未同步，**非本镜像问题，也未作修改**（本仓库坚持「原样整合」，不改动上游内容）。
+- **页脚版本显示 `2.7.1` 是该独立（standalone）版本的最后更新版本**：管理页页脚读取的是子包 `packages/standalone/package.json` 的 `version` 字段（独立版本线，最后更新到 `2.7.1`）；它与根 `package.json` 的版本（插件线，当前 `2.8.0`）是两条不同的版本线，**并非同一版本**。因此页脚显示 `2.7.1` 属正常，与容器化无关，本镜像亦未改动上游内容（坚持「原样整合」）。
 - **模型工作台提示 `Magpie engine binary is unavailable` 是上游限制**：上游 `vendor/magpie/engine.json` 仅提供 `win32-x64` 平台的引擎二进制，Linux 容器（包括本镜像）下 `status().available` 恒为 `false`，故模型工作台里 Magpie 引擎显示不可用。**这是上游平台支持范围问题，非容器化导致**；本仓库坚持「原样整合」、不编译注入任何二进制，故不会绕过该限制。若需使用 Magpie，请在 Windows 宿主上直接运行上游原版。
-- 本仓库的 `PLAN.md` 与本地测试文件不入库，仅存在于本地工作副本。
