@@ -10,7 +10,7 @@ name: ofm
 
 services:
   ofm:
-    image: ${OFM_IMAGE:-ghcr.io/hlee-fun/our-free-model-v2.8.0:latest}
+    image: ${OFM_IMAGE:-ghcr.io/hlee-fun/our-free-model:latest}
     container_name: ofm
     restart: unless-stopped
 

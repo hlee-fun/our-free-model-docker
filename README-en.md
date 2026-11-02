@@ -6,7 +6,10 @@ Packages the **standalone** mode of [dsh-our-free-model](https://github.com/Ebon
 
 > **Disclaimer**: this project only **repackages the upstream code into a container, unmodified**. The features, content, models and service quality of the upstream project are **not related to the author of this repository**; all copyright and responsibility belong to the original author. This repository contains no upstream source code and makes no changes to its content.
 >
-> **No content changes**: the upstream code is used verbatim (shallow-cloned at build time and packaged). The single exception is `docker/patch-trust.mjs`, which adds a switch to `src/trust.js` that **only takes effect when `OFM_TRUSTED_HOSTS` is set** (with the variable unset the behaviour is byte-for-byte identical to upstream). `socat` is an extra component inside the image and does not modify upstream code either.
+> **No content changes**: the upstream code is used verbatim (shallow-cloned at build time and packaged). Only two minimal patches are applied, both of which fall back to upstream behaviour when their respective env var is unset (so they are not functional changes):
+> - `docker/patch-trust.mjs` adds an `OFM_TRUSTED_HOSTS` switch to `src/trust.js` to let the LAN Host fence pass (otherwise the management UI returns `403`);
+> - `docker/patch-baseurl.mjs` makes `/api/management/summary` rewrite `baseUrl` based on the **actual request Host header**, fixing the LAN issue where the frontend received a hardcoded `127.0.0.1` base URL and routed its API calls / redirects back to the visitor's own loopback (the address is auto-detected, never hard-coded).
+> `socat` is an extra component inside the image and does not modify upstream code either.
 
 ## Upstream attribution
 
@@ -15,7 +18,7 @@ Packages the **standalone** mode of [dsh-our-free-model](https://github.com/Ebon
 | Project | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
 | Author | **Ebony-Vinyl** |
 | License | **MIT** |
-| Upstream version used | `2.8.0` (image `ghcr.io/hlee-fun/our-free-model-v2.8.0:latest`) |
+| Upstream version used | `2.8.0` (image `ghcr.io/hlee-fun/our-free-model:latest`) |
 
 When redistributing the image you must keep the upstream `LICENSE` and the third-party notices (`vendor/channel-pack/`, `vendor/magpie/`, `scripts/standalone-third-party.txt`).
 
@@ -29,7 +32,7 @@ Upstream **restricts the management UI to the local machine** (the management po
 | **Management UI** | `http://<HOST_IP>:18900` | A browser on any LAN device | Paste the **Management Key** into the "token" field |
 
 - **Gateway**: upstream already listens on `0.0.0.0`, so it is reachable from the LAN out of the box once containerised.
-- **Management UI**: upstream binds to loopback only, so LAN devices get `10061`; this image relays it per LAN IP with `socat` and whitelists it through `OFM_TRUSTED_HOSTS` to pass the upstream Host fence (otherwise `403`) — **this is the main enhancement over the original project**.
+- **Management UI**: upstream binds to loopback only, so LAN devices get `10061`; this image relays it per LAN IP **auto-detected via `hostname -I`** (not hard-coded) with `socat`, and whitelists it through `OFM_TRUSTED_HOSTS` to pass the upstream Host fence (otherwise `403`); `patch-baseurl.mjs` additionally rewrites the management API base URL to match the address the visitor used, so the frontend no longer sends its API calls / redirects back to the visitor's own `127.0.0.1` — **this is the main enhancement over the original project**.
 - The two keys are **not interchangeable**: the LAN Key is only for the gateway on `18901`, the Management Key only for logging into `18900`. Both live in `/data/settings.json` (`standaloneLanKey` / `managementKey`).
 - The ports above are defaults; override them with `OFM_ADMIN_PORT` / `OFM_LAN_PORT`.
 
@@ -74,4 +77,5 @@ The LAN Key can also be viewed / rotated in the management UI under "API access"
 ## Notes
 
 - The free-tier quota is controlled by upstream (it may return `429 Free usage limit reached`); unrelated to containerisation.
+- **The footer showing version `2.7.1` is an upstream leftover**: the upstream root `package.json` is already `2.8.0`, but the sub-package `packages/standalone/package.json`'s `version` field was not bumped on release (still `2.7.1`), and the management UI footer reads that sub-package version. This is the original author's unsynced source, **not a bug in this image, and intentionally left unchanged** (this repository adheres to "repackaging as-is" and does not modify upstream content).
 - The `PLAN.md` and local test files of this repository are not committed; they exist only in the local working copy.

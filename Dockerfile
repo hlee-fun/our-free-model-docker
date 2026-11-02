@@ -32,6 +32,10 @@ COPY --from=builder /dist/ /app/
 # (未设置该环境变量时行为与上游完全一致; 见 docker/patch-trust.mjs)
 COPY docker/patch-trust.mjs /patch-trust.mjs
 RUN node /patch-trust.mjs
+# 容器化补丁: 让 /api/management/summary 按请求实际 Host 回写 baseUrl,
+# 修复局域网访问时前端 baseUrl 写死 127.0.0.1 导致 API/跳转失败(自动获取, 非固定值)。
+COPY docker/patch-baseurl.mjs /patch-baseurl.mjs
+RUN node /patch-baseurl.mjs
 # socat: 把 loopback 的管理端口透传到局域网(纯 TCP 转发, 不改上游源码)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends socat \
