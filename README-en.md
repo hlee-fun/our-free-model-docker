@@ -19,7 +19,7 @@ Packages the **standalone** mode of [dsh-our-free-model](https://github.com/Ebon
 | Project | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
 | Author | **Ebony-Vinyl** |
 | License | **MIT** |
-| Upstream version used | `2.8.0` (release tag; image `ghcr.io/hlee-fun/our-free-model:latest`; the footer shows the standalone version `2.7.1`, a separate version line — see Notes) |
+| Upstream version used | `2.7.1` (standalone version line; image `ghcr.io/hlee-fun/our-free-model:latest`) |
 
 When redistributing the image you must keep the upstream `LICENSE` and the third-party notices (`vendor/channel-pack/`, `vendor/magpie/`, `scripts/standalone-third-party.txt`).
 
