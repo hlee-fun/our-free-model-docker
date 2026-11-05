@@ -85,4 +85,11 @@ if [ -n "${OFM_ADMIN_PORT:-}" ] || [ -n "${OFM_LAN_PORT:-}" ]; then
   echo "端口覆盖: --port $ADMIN_PORT --lan-port $LAN_PORT"
 fi
 
-exec node packages/standalone/cli.mjs "$@"
+# 0.6: 默认使用运行时补丁入口 —— 在 startStandalone 返回后重写 runtime.testModel,
+# 让 worker 渠道模型(loomy/qoder/trae...)的「测试模型」不再误报 Unknown model。
+# 补丁不改动任何上游文件; 设 OFM_DISABLE_TESTMODEL_PATCH=1 可回退到上游 cli.mjs。
+if [ "${OFM_DISABLE_TESTMODEL_PATCH:-0}" = "1" ]; then
+  echo "已禁用 testModel 运行时补丁, 回退到上游 cli.mjs"
+  exec node packages/standalone/cli.mjs "$@"
+fi
+exec node /app/start-patched.mjs "$@"

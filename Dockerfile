@@ -10,6 +10,9 @@
 #     1) 默认跟随 upstream main 全量重建(不再基于旧 tag 叠加补丁层), build.sh 默认 ref=main;
 #     2) 新增 ENV OUR_FREE_MODEL_FREE_TRANSPORT=node —— 上游 main 的 src/egress.js 把 free
 #        目录默认传输改为 auto(优先 Bun), 本镜像不含 Bun, 不设该变量会导致 free 清单刷新失败。
+# 0.6 追加: 默认启动入口改为 docker/start-patched.mjs(运行时补丁, 不改上游源码), 重写
+#   runtime.testModel, 让 worker 渠道模型(loomy/qoder/trae...)的「测试模型」不再误报
+#   Unknown model; 设 OFM_DISABLE_TESTMODEL_PATCH=1 可回退到上游 cli.mjs。
 #
 # 排除 DSH 依赖的正确做法: 构建期调用上游自带的打包清单
 #   scripts/pack-standalone.mjs -> standaloneSourceFiles()
@@ -65,12 +68,15 @@ RUN node /patch-clipboard.mjs
 RUN apt-get update \
  && apt-get install -y --no-install-recommends socat \
  && rm -rf /var/lib/apt/lists/*
+# 运行时补丁入口: startStandalone 返回后重写 runtime.testModel(不改动任何上游文件)。
+# 由 /entrypoint.sh 默认调用; 上游 cli.mjs 仍保留, 可用环境变量开关回退。
+COPY docker/start-patched.mjs /app/start-patched.mjs
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 VOLUME ["/data"]
 # LAN 推理中继 18901(0.0.0.0, 对外网关) + 管理端口 18900(socat 透传到局域网)
 EXPOSE 18900 18901
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:18900/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.OFM_ADMIN_PORT||18900)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["--lan", "--lan-port", "18901", "--data-dir", "/data"]
