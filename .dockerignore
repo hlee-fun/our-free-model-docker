@@ -3,3 +3,11 @@
 *.md
 docker-compose.yml
 build.sh
+
+# 备份/离线应急文件不进入构建上下文
+*.bak
+*.backup
+*.orig
+*.old
+*~
+Dockerfile.patch

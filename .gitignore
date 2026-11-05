@@ -31,3 +31,13 @@ local-test/*.example
 local-test/
 *test*
 *Test*
+
+# 备份/离线应急文件（本地留存，不入库、不推送）
+*.bak
+*.backup
+*.orig
+*.old
+*~
+Dockerfile.*.bak
+# 离线应急补丁层 Dockerfile（已由主 Dockerfile 全量构建取代，不分发至仓库）
+Dockerfile.patch
