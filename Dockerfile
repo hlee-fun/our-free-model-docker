@@ -41,6 +41,11 @@ RUN node /patch-baseurl.mjs
 # 未设置 OFM_LAN_IP 时行为与上游完全一致(127.0.0.1)。
 COPY docker/patch-lan-login.mjs /patch-lan-login.mjs
 RUN node /patch-lan-login.mjs
+# 复制修复: API 接入页复制按钮在局域网 HTTP(non-secure context)下 navigator.clipboard
+# 为 undefined, 直接读 .writeText 报错; 改为可选链判空 + execCommand 降级(与 client.js 一致)。
+# 仅替换构建产物 app.js 中这一处字符串, 带哨兵标记, 可重复执行(幂等); 不改上游源码。
+COPY docker/patch-clipboard.mjs /patch-clipboard.mjs
+RUN node /patch-clipboard.mjs
 # socat: 把 loopback 的管理端口透传到局域网(纯 TCP 转发, 不改上游源码)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends socat \
