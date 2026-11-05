@@ -11,3 +11,4 @@ build.sh
 *.old
 *~
 Dockerfile.patch
+ISSUE-api-copy-clipboard.md

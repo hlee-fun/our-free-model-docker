@@ -41,3 +41,6 @@ local-test/
 Dockerfile.*.bak
 # 离线应急补丁层 Dockerfile（已由主 Dockerfile 全量构建取代，不分发至仓库）
 Dockerfile.patch
+
+# 本地问题记录（不入库、不推送）
+ISSUE-api-copy-clipboard.md
