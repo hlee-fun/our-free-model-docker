@@ -1,28 +1,40 @@
 #!/usr/bin/env bash
 # 构建并打标签. 版本约定: v{上游}[-main].docker.{批次}
-# 默认跟随上游 main 全量重建(2026-11-06 已验证四个补丁零冲突).
+# 默认跟随上游 main 全量重建(2026-11-11 已按新上游 2.8.3 重新验证五个补丁).
 # 0.6 起镜像默认入口含 testModel 运行时补丁(修复 Unknown model), 见 docker/start-patched.mjs.
+# 0.7 起 clipboard 补丁改为不依赖压缩变量名的通用结构锚点(上游 2.8.3 重命名了 V/z -> N/S).
 #
 # 用法:
-#   ./build.sh                        -> UPSTREAM_REF=main, BATCH=0.6, tag v2.8.0-main-docker-0.6
+#   ./build.sh                        -> UPSTREAM_REF=main, BATCH=0.7, tag v2.8.3-main-docker-0.7
 #   UPSTREAM_REF=v2.8.0 ./build.sh     -> 锁定上游 tag v2.8.0, 复现旧版
-#   BATCH=0.7 ./build.sh              -> 同一上游, 指定其他批次
+#   BATCH=0.8 ./build.sh              -> 同一上游, 指定其他批次
 #   GIT_SSL_NO_VERIFY=true BUILD_NETWORK=host ./build.sh
 #       -> TLS 中间代理环境: 构建期 clone 走宿主代理且跳过代理自签证书校验
+#   UPSTREAM_VERSION=2.8.3 ./build.sh -> 宿主连不上 GitHub / 离线时显式指定版本号
+#   CACHE_BUST=<值> ./build.sh       -> 固定 clone 层缓存键(默认当前时间戳, 保证跟随 main 全新拉取)
 #   (上游 git 不可达时, 可本地自备离线叠加补丁层 Dockerfile; 该文件属本地应急文件, 不入库)
 set -euo pipefail
 
 UPSTREAM_REF="${UPSTREAM_REF:-main}"
-BATCH="${BATCH:-0.6}"
+BATCH="${BATCH:-0.7}"
+# main 会持续更新; 每次构建给 clone 层一个新缓存键, 防止 Docker 复用旧提交源码
+CACHE_BUST="${CACHE_BUST:-$(date +%s)}"
 GIT_SSL_NO_VERIFY="${GIT_SSL_NO_VERIFY:-false}"
 BUILD_NETWORK="${BUILD_NETWORK:-}"
 # 镜像名: 远程拉取/推送统一为 ghcr.io/hlee-fun/our-free-model:latest
 IMAGE="${IMAGE:-ghcr.io/hlee-fun/our-free-model}"
 
-# 跟随上游获取版本号(读取项目根 package.json 的 version 字段 = 项目发布版本, 如 2.8.0;
-# 注意: packages/standalone/package.json 是子包版本, 会滞后为 2.7.1, 不采用)
-UPSTREAM_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/Ebony-Vinyl/dsh-our-free-model/${UPSTREAM_REF}/package.json" \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')"
+# 跟随上游获取版本号(读取项目根 package.json 的 version 字段 = 项目发布版本, 如 2.8.3;
+# 注意: packages/standalone/package.json 是子包版本, 会滞后, 不采用)
+# 宿主直连 GitHub 被拦 / 离线时, 可显式指定: UPSTREAM_VERSION=2.8.3 ./build.sh
+UPSTREAM_VERSION="${UPSTREAM_VERSION:-}"
+if [ -z "${UPSTREAM_VERSION}" ]; then
+  UPSTREAM_VERSION="$(curl -fsSL "https://raw.githubusercontent.com/Ebony-Vinyl/dsh-our-free-model/${UPSTREAM_REF}/package.json" \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).version))')" || {
+      echo "==> 无法从上游读取版本号; 可显式指定: UPSTREAM_VERSION=<版本> ./build.sh" >&2
+      exit 1
+    }
+fi
 
 # 跟随 main 时在版本里显式标注, 与锁定 tag 的旧批次区分
 REF_SUFFIX=""
@@ -44,6 +56,7 @@ docker build \
   "${PROXY_ARGS[@]}" \
   --build-arg "UPSTREAM_REF=${UPSTREAM_REF}" \
   --build-arg "UPSTREAM_VERSION=${UPSTREAM_VERSION}" \
+  --build-arg "CACHE_BUST=${CACHE_BUST}" \
   --build-arg "GIT_SSL_NO_VERIFY=${GIT_SSL_NO_VERIFY}" \
   -t "${IMAGE}:latest" \
   -t "${IMAGE}:${VERSION_TAG}" \

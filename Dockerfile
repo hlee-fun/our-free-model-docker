@@ -13,6 +13,11 @@
 # 0.6 追加: 默认启动入口改为 docker/start-patched.mjs(运行时补丁, 不改上游源码), 重写
 #   runtime.testModel, 让 worker 渠道模型(loomy/qoder/trae...)的「测试模型」不再误报
 #   Unknown model; 设 OFM_DISABLE_TESTMODEL_PATCH=1 可回退到上游 cli.mjs。
+# 0.7 (2026-11-11): 跟随上游新 main (dcb9cc78, 2.8.3) 全新重建。逐锚点核对结论:
+#   trust 目标未变, baseurl/lan-login 锚点仍在, testModel 缺陷上游仍未修, 三者原样重放;
+#   仅 web/app.js 因压缩变量重命名使 clipboard 旧锚点失效 -> patch-clipboard.mjs 改为
+#   捕获变量名的通用结构锚点。上游打包清单新增的 src/extensions.js / plugins.js /
+#   semver.js 由 extract-standalone.mjs 随上游清单自动带入, 无需手工维护。
 #
 # 排除 DSH 依赖的正确做法: 构建期调用上游自带的打包清单
 #   scripts/pack-standalone.mjs -> standaloneSourceFiles()
@@ -22,6 +27,9 @@
 ARG UPSTREAM_REF=main
 FROM node:22-bookworm-slim AS builder
 ARG UPSTREAM_REF
+# 跟随 main 时强制刷新 clone 层缓存: 该 RUN 指令字符串固定, 否则 Docker 会复用上次
+# 构建缓存里的旧提交源码(0.7 就曾因此可能停留在 2.8.0)。build.sh 默认传当前时间戳。
+ARG CACHE_BUST=0
 # 可选: 仅在 TLS 中间代理环境(构建期 clone 无法校验代理自签证书)显式传
 #   --build-arg GIT_SSL_NO_VERIFY=true 关闭校验; 默认 false 保持证书校验。
 ARG GIT_SSL_NO_VERIFY=false
@@ -30,7 +38,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 # 构建时浅克隆(仅一次提交, 不带入完整历史与 DSH 插件产物)
-RUN git -c http.sslVerify="${GIT_SSL_NO_VERIFY}" clone --depth 1 --branch "${UPSTREAM_REF}" https://github.com/Ebony-Vinyl/dsh-our-free-model /src \
+RUN echo "[builder] cache bust ${CACHE_BUST}; upstream ${UPSTREAM_REF}" \
+ && git -c http.sslVerify="${GIT_SSL_NO_VERIFY}" clone --depth 1 --branch "${UPSTREAM_REF}" https://github.com/Ebony-Vinyl/dsh-our-free-model /src \
  || (git -c http.sslVerify="${GIT_SSL_NO_VERIFY}" clone --depth 1 https://github.com/Ebony-Vinyl/dsh-our-free-model /src && git -C /src checkout "${UPSTREAM_REF}")
 # 用上游自带清单提取「仅独立所需」文件 -> /dist (自动排除 DSH 依赖部分)
 COPY docker/extract-standalone.mjs /extract-standalone.mjs
@@ -62,6 +71,7 @@ RUN node /patch-lan-login.mjs
 # 复制修复: API 接入页复制按钮在局域网 HTTP(non-secure context)下 navigator.clipboard
 # 为 undefined, 直接读 .writeText 报错; 改为可选链判空 + execCommand 降级(与 client.js 一致)。
 # 仅替换构建产物 app.js 中这一处字符串, 带哨兵标记, 可重复执行(幂等); 不改上游源码。
+# 0.7: 锚点按结构匹配并捕获压缩变量名/toast 函数名原样写回, 不再写死 V/z, 兼容新旧 bundle。
 COPY docker/patch-clipboard.mjs /patch-clipboard.mjs
 RUN node /patch-clipboard.mjs
 # socat: 把 loopback 的管理端口透传到局域网(纯 TCP 转发, 不改上游源码)
