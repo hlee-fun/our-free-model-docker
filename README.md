@@ -11,7 +11,7 @@
 >
 > - `docker/patch-trust.mjs` 对 `src/trust.js` 加了一个 `OFM_TRUSTED_HOSTS` 开关，放行局域网 Host 围栏（否则管理页 `403`）；
 > - `docker/patch-baseurl.mjs` 让管理页 `/api/management/summary` 按**请求实际 Host 头**回写 `baseUrl`，修复局域网访问时前端拿到的 API 基地址写死为 `127.0.0.1` 导致「API/跳转仍是本机回环、页面打不开」的问题（地址自动获取，非固定值）。
-> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / Trae / LobsterAI / Raccoon / Carrier）的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或手动覆盖），修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题。**TRAE 同样适用**：默认即把 `auth_callback_url` 改成 `http://<LAN_IP>:<port>/authorize` 并把回调服务绑 `0.0.0.0`，故**局域网内任意机器**都能完成 TRAE 登录（已实测 trae.cn 接受非 loopback 回调），无需每人配 SSH 隧道。公网发布时再设 `OFM_CALLBACK_HOST`(域名)+`OFM_CALLBACK_SECURE`(1) 经 frp/反代桥接；仍可由 `OFM_CALLBACK_HOST=127.0.0.1` 强制回退 loopback（同机可用）。未设置任何回调变量时行为与上游完全一致。
+> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / LobsterAI / Raccoon / Carrier）的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或手动覆盖），修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题。**TRAE 例外（实测结论）**：trae.cn 的令牌只在「点授权」后向 **loopback** 回调投放（https 授权页跳转 `http://<LAN_IP>` 会被浏览器升级成 https / 拦为混合内容，表现为浏览器弹「网络错误」、服务端「TRAE 登录超时」），故 TRAE 默认保持上游 loopback 行为（授权浏览器与 ofm 同机时可用）；跨机器登录请设 `OFM_CALLBACK_HOST`(域名)+`OFM_CALLBACK_SECURE`(1) 切换为 **https 域名回调**（公网经 frp 桥接，或纯局域网用 DNS-01 真证书 + 内网 DNS 解析），此时回调服务绑 `0.0.0.0`。未设置任何回调变量时行为与上游完全一致。
 >   `socat` 为镜像内附加组件，同样不改动上游代码。
 
 ## 上游归属
@@ -36,7 +36,7 @@
 
 - **网关**：上游本就监听 `0.0.0.0`，容器化后对局域网天然可用。
 - **管理页**：上游绑死 loopback，局域网设备访问会 `10061`；镜像用 `socat` 按局域网 IP **自动探测并透传**（IP 由 `hostname -I` 实时获取，非写死），并用 `OFM_TRUSTED_HOSTS` 放行上游 Host 围栏（否则 `403`）；同时 `patch-baseurl.mjs` 让管理页 API 基地址随访问地址自动回写，避免前端把请求/跳转发回来访者自己的 `127.0.0.1`——**这是本镜像相对原项目的主要增强**。
-- **EAC router「添加账号」登录**：在管理页里给各渠道（Loomy 微信 / Trae / LobsterAI / Raccoon / Carrier 等）添加账号时，上游会在本机起一个临时 OAuth 回调服务，并把回调地址写死成 `http://127.0.0.1:<随机端口>/...`。局域网设备浏览器打开该链接会指向自己本机、连不到宿主，登录无法进行。`patch-lan-login.mjs` 让这些回调服务的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或由你手动指定），使局域网设备能正常完成登录。**地址自动获取，非固定值。**
+- **EAC router「添加账号」登录**：在管理页里给各渠道（Loomy 微信 / LobsterAI / Raccoon / Carrier 等）添加账号时，上游会在本机起一个临时 OAuth 回调服务，并把回调地址写死成 `http://127.0.0.1:<随机端口>/...`。局域网设备浏览器打开该链接会指向自己本机、连不到宿主，登录无法进行。`patch-lan-login.mjs` 让这些回调服务的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或由你手动指定），使局域网设备能正常完成登录。**TRAE 不适用此改写**（trae.cn 令牌只投放 loopback，见上），跨机器登录走 `OFM_CALLBACK_HOST`+`OFM_CALLBACK_SECURE` 的 https 域名回调。**地址自动获取，非固定值。**
 - 两个 Key **不互通**：LAN Key 只给 18901 网关，Management Key 只给 18900 登录；都在 `/data/settings.json`（`standaloneLanKey` / `managementKey`）。
 - 端口为默认值，可用 `OFM_ADMIN_PORT` / `OFM_LAN_PORT` 改。
 
@@ -76,11 +76,11 @@ LAN Key 也可在管理页「API 接入」查看 / 轮换；`Management Key` 无
 | --------------------------------- | ---------------------------- | -------------------------------------------------- |
 | `OUR_FREE_MODEL_FREE_TRANSPORT`   | `node`                       | 容器内无 Bun 时推理会 502，此变量恢复旧传输层                        |
 | `OFM_TRUSTED_HOSTS`               | 自动探测                         | 放行访问管理页的主机；桥接网络需手动填宿主 IP                           |
-| `OFM_LAN_IP`                      | 自动探测（首个非 docker 网桥的局域网 IPv4） | EAC router「添加账号」登录回调**绑定地址与默认回调 URL host**（含 TRAE）；手动指定可覆盖自动探测（如多网卡场景） |
-| `OFM_CALLBACK_HOST`              | 未设（回退 `OFM_LAN_IP`）          | 覆盖登录回调 URL 的 host；跨网段 / 公网发布时填客户端实际可路由到的地址（如内网主机名、frp 公网域名）；设为 `127.0.0.1` 可强制 TRAE 回退 loopback |
+| `OFM_LAN_IP`                      | 自动探测（首个非 docker 网桥的局域网 IPv4） | EAC router「添加账号」登录回调**绑定地址与默认回调 URL host**（Loomy/LobsterAI/Raccoon/Carrier；TRAE 默认不使用）；手动指定可覆盖自动探测（如多网卡场景） |
+| `OFM_CALLBACK_HOST`              | 未设                                  | 覆盖登录回调 URL 的 host；跨网段 / 公网发布时填客户端实际可路由到的地址（如内网主机名、frp 公网域名）。**设置后 TRAE 也切换为该 host 回调**且回调服务绑 `0.0.0.0` |
 | `OFM_CALLBACK_PORT`              | 未设（回退运行时监听端口）            | 覆盖登录回调 URL 的端口；frp / 反向代理改端口映射时填写                         |
-| `OFM_CALLBACK_SECURE`            | 未设（http）                       | 设 `1`/`true` 则回调 URL 用 `https`（公网发布必需，trae.cn 对非 loopback 回调通常要求 https；纯局域网用 http 即可） |
-| `OFM_TRAE_CALLBACK_PORT`         | 未设（18080）                      | 仅 TRAE：覆盖其回调服务监听端口；该端口常被 ofm 主服务占用导致随机回退，发布时建议显式指定一个空闲端口供 frp 固定映射 |
+| `OFM_CALLBACK_SECURE`            | 未设（http）                       | 设 `1`/`true` 则回调 URL 用 `https`。**TRAE 跨机器登录必需**：trae.cn 的令牌只向 loopback 的 http 回调或 https 回调投放，`https://域名` 是唯一跨机器形态 |
+| `OFM_TRAE_CALLBACK_PORT`         | 未设（18080）                      | 仅 TRAE：覆盖其回调服务监听端口；该端口常被 ofm 主服务占用导致随机回退，发布时建议显式指定一个空闲端口供 frp 固定映射（与 `OFM_CALLBACK_PORT` 同填该端口） |
 | `OFM_ADMIN_PORT` / `OFM_LAN_PORT` | `18900` / `18901`            | 管理端口 / 网关端口                                        |
 
 ## 备注

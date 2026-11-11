@@ -15,10 +15,12 @@
 //   - Loomy 微信 / LobsterAI / Raccoon / Carrier 等是「网页 / 服务端中继」回调，需要回调地址
 //     对发起登录的设备可达，故把 127.0.0.1 改成 OFM_LAN_IP（或 OFM_CALLBACK_*）即可在多设备
 //     / 跨网段下使用。
-//   - TRAE 的 native_ide 登录：默认改走 OFM_LAN_IP（容器自动探测的局域网主 IP），回调服务绑定
-//     0.0.0.0，使得【局域网内任意机器】打开回调地址均可直达宿主回调服务，完成登录
-//     （无需每人配 SSH 隧道）。公网发布时再设 OFM_CALLBACK_HOST(域名) + OFM_CALLBACK_SECURE(1)，
-//     由 frp / 反代把公网请求桥接进来。仍可由 OFM_CALLBACK_HOST=127.0.0.1 强制回退 loopback。
+//   - TRAE 的 native_ide 登录：**默认保持 loopback（上游行为）**。实测（2026-11-11，见
+//     日志）：http://LAN_IP 回调在 trae.cn「授权完成」环节失效——授权页能开（HTTP 200），
+//     但点授权后令牌只向 loopback 投放；https 授权页跳转 http://LAN_IP 会被浏览器升级成
+//     https / 拦为混合内容，令牌永远到不了回调（服务端表现为「TRAE 登录超时」）。
+//     局域网 / 公网请设 OFM_CALLBACK_HOST(域名) + OFM_CALLBACK_SECURE(1) 切换为 **https 域名
+//     回调**（公网 frp 桥接，或纯局域网用 DNS-01 真证书 + 内网 DNS），此时回调服务绑 0.0.0.0。
 //
 // 远程 / 跨网段访问（经 frp 或内网多子网）：
 //   - OFM_CALLBACK_URL（可选，最高优先级）：回调 URL 的完整 base（含 scheme + host，
@@ -52,23 +54,21 @@ src = src.replace(
   'var TRAE_CALLBACK_PORT = process.env.OFM_TRAE_CALLBACK_PORT ? Number(process.env.OFM_TRAE_CALLBACK_PORT) : 18080;'
 );
 
-// TRAE 绑定地址：OFM_CALLBACK_HOST 或 OFM_LAN_IP 设置时绑 0.0.0.0（供局域网/公网设备访问），
-// 否则保持 127.0.0.1（loopback）。OFM_LAN_IP 由 entrypoint 自动探测，故容器内默认即局域网可达。
-// 强制回退 loopback 的方法：显式设置 OFM_CALLBACK_HOST=127.0.0.1。
+// TRAE 绑定地址：仅当 OFM_CALLBACK_HOST（https 域名回调）设置时绑 0.0.0.0（供 frp / 反代桥接），
+// 否则保持上游 127.0.0.1（loopback）。LAN_IP 默认已实测证伪（trae.cn 令牌只投放 loopback）。
 src = src.replace(
   /server\.listen\(port,\s*"127\.0\.0\.1",\s*\(\s*\)\s*=>/g,
-  'server.listen(port, (process.env.OFM_CALLBACK_HOST || process.env.OFM_LAN_IP ? "0.0.0.0" : "127.0.0.1"), () =>'
+  'server.listen(port, (process.env.OFM_CALLBACK_HOST ? "0.0.0.0" : "127.0.0.1"), () =>'
 );
 
-// TRAE 两处 callbackUrl：scheme/host/port 来自 OFM_CALLBACK_SECURE/HOST/PORT，默认走 OFM_LAN_IP。
-// OFM_LAN_IP 自动探测 -> 局域网内任意机器浏览器均可访问；同机浏览器访问本机 LAN IP 同样可达。
+// TRAE 两处 callbackUrl：默认 loopback（上游行为）；设 OFM_CALLBACK_HOST(+SECURE) 时切 https 域名回调。
 src = src.replace(
   'http://127.0.0.1:${port}/authorize`',
-  '${(process.env.OFM_CALLBACK_SECURE ? "https" : "http")}://${(process.env.OFM_CALLBACK_HOST || process.env.OFM_LAN_IP || "127.0.0.1")}:${(process.env.OFM_CALLBACK_PORT || port)}/authorize`'
+  '${(process.env.OFM_CALLBACK_SECURE ? "https" : "http")}://${(process.env.OFM_CALLBACK_HOST || "127.0.0.1")}:${(process.env.OFM_CALLBACK_PORT || port)}/authorize`'
 );
 src = src.replace(
   'http://127.0.0.1:${actualPort}/authorize`',
-  '${(process.env.OFM_CALLBACK_SECURE ? "https" : "http")}://${(process.env.OFM_CALLBACK_HOST || process.env.OFM_LAN_IP || "127.0.0.1")}:${(process.env.OFM_CALLBACK_PORT || actualPort)}/authorize`'
+  '${(process.env.OFM_CALLBACK_SECURE ? "https" : "http")}://${(process.env.OFM_CALLBACK_HOST || "127.0.0.1")}:${(process.env.OFM_CALLBACK_PORT || actualPort)}/authorize`'
 );
 
 // ───────────────────────── 通用渠道（Loomy / LobsterAI / Raccoon / Carrier） ─────────────────────────
