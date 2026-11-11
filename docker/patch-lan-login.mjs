@@ -33,6 +33,16 @@
 //     该端口常被 ofm 主服务占用导致随机回退，发布时建议显式指定一个空闲端口供 frp 固定映射）。
 //
 // 仅改动绑定 host 与对外 URL 模板，不触碰内部请求解析与桌面端 Chrome DevTools 地址。
+//
+// 0.11 追加（2026-11-11）：TRAE 手动回调投递。
+//   背景（当日实测闭环）：trae.cn 授权页从 https 页面用页面 JS 投递令牌——http://LAN_IP
+//   被浏览器混合内容拦截、https 需浏览器信任的证书（纯局域网无域名 ⇒ 物理不可得），
+//   故跨机器场景令牌只会落在使用者自己浏览器的 127.0.0.1。
+//   解法：管理页新增「TRAE 登录助手」悬浮面板，使用者把授权后地址栏的完整回调 URL
+//   粘贴进去 → 新增 RPC `login.submitCallback` 由 ofm 在本机转发给待处理的回调服务
+//   （完整复用上游 解析→兑换→入账→login.poll 链路），流程 = 添加账号→授权→粘贴→完成。
+//   安全：仅接受 http://127.0.0.1|localhost|[::1] 的 /authorize 路径（防 SSRF），
+//   且要求 URL 携带令牌参数才转发（避免一次误粘贴白白消耗掉本次登录尝试）。
 
 import fs from 'node:fs';
 
@@ -90,6 +100,126 @@ if (bindBefore === 0 && urlBefore === 0) {
   console.warn('[patch-lan-login] 警告: 未找到任何可补丁的 127.0.0.1 登录地址（上游可能已改）');
 }
 
+// ───────────────────────── 0.11 后端: login.submitCallback RPC ─────────────────────────
+// 插在 login.poll case 之后。粘贴的 URL 自带端口（即待处理回调服务的 loopback 端口），
+// 故无需在 account.create 侧记账；转发给 127.0.0.1:<port>/authorize 即完整复用上游链路。
+const submitCallbackCase = `      case "login.submitCallback": {
+        const req = payload;
+        if (!req || req.provider !== TRAE.id) {
+          return { ok: false, error: { code: "bad-request", message: "仅 TRAE 渠道支持手动投递回调地址" } };
+        }
+        const raw = typeof req.url === "string" ? req.url.trim() : "";
+        if (raw.length === 0 || raw.length > 8192) {
+          return { ok: false, error: { code: "bad-request", message: "回调地址为空或过长" } };
+        }
+        let parsedCallback;
+        try {
+          parsedCallback = new URL(raw);
+        } catch {
+          return { ok: false, error: { code: "bad-request", message: "回调地址无法解析——请复制授权后浏览器地址栏的完整 URL（含 ? 后全部参数）" } };
+        }
+        const loopbackHosts = ["127.0.0.1", "localhost", "[::1]"];
+        if (parsedCallback.protocol !== "http:" || !loopbackHosts.includes(parsedCallback.hostname)) {
+          return { ok: false, error: { code: "bad-request", message: "仅接受 http://127.0.0.1:<端口>/authorize 形态的回调地址（即授权后浏览器地址栏显示的地址）" } };
+        }
+        if (!parsedCallback.pathname.startsWith("/authorize")) {
+          return { ok: false, error: { code: "bad-request", message: "回调地址路径必须是 /authorize" } };
+        }
+        const hasTokenParam = ["refreshToken", "userJwt", "code", "authCode", "authCodeInfo"].some((key) => (parsedCallback.searchParams.get(key) ?? "").trim().length > 0);
+        if (!hasTokenParam) {
+          return { ok: false, error: { code: "bad-request", message: "回调地址缺少令牌参数（refreshToken / userJwt）——请复制授权后地址栏的完整 URL，不要只复制到 ? 之前" } };
+        }
+        const callbackPort = Number(parsedCallback.port) || 80;
+        try {
+          const callbackResp = await fetch("http://127.0.0.1:" + callbackPort + parsedCallback.pathname + parsedCallback.search, { signal: AbortSignal.timeout(3e4) });
+          const callbackText = await callbackResp.text().catch(() => "");
+          if (callbackResp.ok) {
+            return { ok: true, value: { submitted: true, message: callbackText.slice(0, 200) } };
+          }
+          return { ok: false, error: { code: "bad-request", message: callbackText.slice(0, 300) || "回调处理失败（HTTP " + callbackResp.status + "）" } };
+        } catch (submitError) {
+          const reason = submitError instanceof Error ? submitError.message : String(submitError);
+          return { ok: false, error: { code: "bad-request", message: "回调服务不可达（登录可能已超时，请重新「添加账号」并再次授权）: " + reason } };
+        }
+      }
+`;
+const submitCallbackAnchor = '        return { ok: true, value: { done: true, success: true } };\n      }\n';
+const submitAnchorCount = src.split(submitCallbackAnchor).length - 1;
+if (submitAnchorCount !== 1) {
+  console.error(`[patch-lan-login] 错误: login.poll 成功返回锚点匹配 ${submitAnchorCount} 处（期望 1），中止`);
+  process.exit(1);
+}
+src = src.replace(submitCallbackAnchor, submitCallbackAnchor + submitCallbackCase);
+
 src = marker + '\n' + src;
 fs.writeFileSync(file, src);
-console.log(`[patch-lan-login] 完成: 绑定地址 ${bindBefore} 处, 对外 URL ${urlBefore} 处 -> 改用 OFM_LAN_IP / OFM_CALLBACK_*`);
+console.log(`[patch-lan-login] 完成: 绑定地址 ${bindBefore} 处, 对外 URL ${urlBefore} 处 -> 改用 OFM_LAN_IP / OFM_CALLBACK_*; login.submitCallback 已注入`);
+
+// ───────────────────────── 0.11 前端: 管理页「TRAE 登录助手」悬浮面板 ─────────────────────────
+const webAppFile = '/app/packages/standalone/web/app.js';
+const panelMarker = '/* OFM-TRAE-CALLBACK-PANEL */';
+const panelCode = `;(function () {
+  if (typeof window === "undefined" || window.__ofmTraeCbPanel) return;
+  window.__ofmTraeCbPanel = true;
+  function ready(fn) { if (document.readyState !== "loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
+  ready(function () {
+    var open = false, busy = false;
+    var style = document.createElement("style");
+    style.textContent = "#ofm-trae-cb{position:fixed;right:16px;bottom:16px;z-index:99999;font:13px/1.5 system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}"
+      + "#ofm-trae-cb .tab{background:#2563eb;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);user-select:none}"
+      + "#ofm-trae-cb .box{display:none;margin-top:8px;width:360px;background:#fff;color:#111;border:1px solid #d4d4d8;border-radius:10px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.25)}"
+      + "#ofm-trae-cb .box.open{display:block}"
+      + "#ofm-trae-cb textarea{width:100%;height:88px;box-sizing:border-box;font:12px/1.4 ui-monospace,monospace;border:1px solid #d4d4d8;border-radius:6px;padding:6px;resize:vertical}"
+      + "#ofm-trae-cb .row{display:flex;gap:8px;align-items:center;margin-top:8px}"
+      + "#ofm-trae-cb button.go{background:#2563eb;color:#fff;border:0;border-radius:6px;padding:6px 14px;cursor:pointer}"
+      + "#ofm-trae-cb button.go:disabled{opacity:.6;cursor:default}"
+      + "#ofm-trae-cb .hint{color:#71717a}"
+      + "#ofm-trae-cb .status{margin-top:6px;word-break:break-all}"
+      + "#ofm-trae-cb .ok{color:#16a34a}#ofm-trae-cb .err{color:#dc2626}";
+    document.head.appendChild(style);
+    var root = document.createElement("div");
+    root.id = "ofm-trae-cb";
+    root.innerHTML = '<div class="tab">TRAE 登录助手</div><div class="box">'
+      + '<div>在弹窗完成 TRAE 授权后，若浏览器停留在「登录失败」页，复制地址栏的<b>完整回调地址</b>（http://127.0.0.1:端口/authorize?...）粘贴到这里：</div>'
+      + '<textarea placeholder="http://127.0.0.1:18080/authorize?isRedirect=true&amp;..."></textarea>'
+      + '<div class="row"><button class="go">投递到服务器</button><span class="hint">服务器将完成令牌兑换并自动入账</span></div>'
+      + '<div class="status"></div></div>';
+    document.body.appendChild(root);
+    var tab = root.querySelector(".tab"), box = root.querySelector(".box"), ta = root.querySelector("textarea"),
+      go = root.querySelector(".go"), status = root.querySelector(".status");
+    tab.addEventListener("click", function () { open = !open; box.className = open ? "box open" : "box"; });
+    go.addEventListener("click", function () {
+      if (busy) return;
+      var url = (ta.value || "").trim();
+      if (!url) { status.className = "status err"; status.textContent = "请先粘贴回调地址"; return; }
+      busy = true; go.disabled = true; status.className = "status"; status.textContent = "投递中…";
+      fetch("/api/management/channels/rpc", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method: "login.submitCallback", payload: { provider: "trae", url: url } })
+      }).then(function (r) { return r.json().catch(function () { return null; }); }).then(function (data) {
+        if (data && data.ok) {
+          status.className = "status ok";
+          status.textContent = "✓ 已投递：服务器正在换取凭据并入账，几秒后刷新页面即可看到账号。" + (data.value && data.value.message ? "（" + data.value.message + "）" : "");
+          ta.value = "";
+        } else {
+          status.className = "status err";
+          status.textContent = (data && data.error && data.error.message) || "投递失败（请确认已在管理页登录）";
+        }
+      }).catch(function (e) {
+        status.className = "status err"; status.textContent = "网络错误：" + e;
+      }).finally(function () { busy = false; go.disabled = false; });
+    });
+  });
+})();
+`;
+let webApp = fs.readFileSync(webAppFile, 'utf8');
+if (webApp.includes(panelMarker)) {
+  console.log('[patch-lan-login] 前端面板已存在，跳过');
+} else {
+  if (!webApp.endsWith('\n')) webApp += '\n';
+  webApp += '\n' + panelMarker + '\n' + panelCode;
+  fs.writeFileSync(webAppFile, webApp);
+  console.log('[patch-lan-login] 前端面板已注入 web/app.js');
+}

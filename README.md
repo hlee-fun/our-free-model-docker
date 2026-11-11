@@ -11,7 +11,7 @@
 >
 > - `docker/patch-trust.mjs` 对 `src/trust.js` 加了一个 `OFM_TRUSTED_HOSTS` 开关，放行局域网 Host 围栏（否则管理页 `403`）；
 > - `docker/patch-baseurl.mjs` 让管理页 `/api/management/summary` 按**请求实际 Host 头**回写 `baseUrl`，修复局域网访问时前端拿到的 API 基地址写死为 `127.0.0.1` 导致「API/跳转仍是本机回环、页面打不开」的问题（地址自动获取，非固定值）。
-> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / LobsterAI / Raccoon / Carrier）的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或手动覆盖），修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题。**TRAE 例外（实测结论）**：trae.cn 的令牌只在「点授权」后向 **loopback** 回调投放（https 授权页跳转 `http://<LAN_IP>` 会被浏览器升级成 https / 拦为混合内容，表现为浏览器弹「网络错误」、服务端「TRAE 登录超时」），故 TRAE 默认保持上游 loopback 行为（授权浏览器与 ofm 同机时可用）；跨机器登录请设 `OFM_CALLBACK_HOST`(域名)+`OFM_CALLBACK_SECURE`(1) 切换为 **https 域名回调**（公网经 frp 桥接，或纯局域网用 DNS-01 真证书 + 内网 DNS 解析），此时回调服务绑 `0.0.0.0`。未设置任何回调变量时行为与上游完全一致。
+> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / LobsterAI / Raccoon / Carrier）的**绑定地址与对外 URL** 改用 `OFM_LAN_IP`（entrypoint 自动探测宿主局域网主 IP，或手动覆盖），修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题。**TRAE 例外（实测结论）**：trae.cn 的令牌只在「点授权」后向 **loopback** 回调投放（https 授权页跳转 `http://<LAN_IP>` 会被浏览器升级成 https / 拦为混合内容，表现为 trae.cn 页面弹「登录失败 / 网络错误，请刷新页面重试」、服务端「TRAE 登录超时」），故 TRAE 默认保持上游 loopback 行为（授权浏览器与 ofm 同机时可用）。**跨机器登录（0.11 起内置）**：管理页右下角「TRAE 登录助手」面板——授权后把浏览器地址栏的完整回调地址（`http://127.0.0.1:端口/authorize?...`）粘贴进去点「投递到服务器」，由 ofm 本机转发给待处理回调服务完成令牌兑换与入账；流程 = 添加账号 → 授权 → 粘贴 → 完成。纯局域网无需任何域名/证书/frp（如需浏览器直投的完全零操作闭环，可另行配置 `OFM_CALLBACK_HOST`(域名)+`OFM_CALLBACK_SECURE`(1) 的 https 域名回调，需真实证书）。
 >   `socat` 为镜像内附加组件，同样不改动上游代码。
 
 ## 上游归属
