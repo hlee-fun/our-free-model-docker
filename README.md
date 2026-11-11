@@ -11,7 +11,8 @@
 >
 > - `docker/patch-trust.mjs` 对 `src/trust.js` 加了一个 `OFM_TRUSTED_HOSTS` 开关，放行局域网 Host 围栏（否则管理页 `403`）；
 > - `docker/patch-baseurl.mjs` 让管理页 `/api/management/summary` 按**请求实际 Host 头**回写 `baseUrl`，修复局域网访问时前端拿到的 API 基地址写死为 `127.0.0.1` 导致「API/跳转仍是本机回环、页面打不开」的问题（地址自动获取，非固定值）。
-> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / Trae / LobsterAI / Raccoon / Carrier）的绑定地址与对外回调 URL 改用 `OFM_LAN_IP`，修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题（未设置 `OFM_LAN_IP` 时行为与上游完全一致）。  
+> - `docker/patch-lan-login.mjs` 让 EAC router 下各类「添加账号」登录流（临时 OAuth 回调服务，如 Loomy 微信 / LobsterAI / Raccoon / Carrier）的绑定地址与对外回调 URL 改用 `OFM_LAN_IP`，修复局域网设备浏览器打开 `http://127.0.0.1:<port>/...` 时指向自己本机、连不到宿主的问题（未设置 `OFM_LAN_IP` 时行为与上游完全一致）。  
+>   **⚠️ TRAE 例外（native_ide 登录）**：TRAE 的 `auth_callback_url` 必须由 IDE 本机本地服务接收（固定 `127.0.0.1:18080`），trae.cn 授权页只接受 loopback 回调，写入非本地地址会被直接拒绝（表现：「弹出授权页 → 未操作就登录失败」）。故该补丁**刻意不改动 TRAE 的 `server.listen` 绑定与回调 URL**，保持上游原始的 `127.0.0.1`。这意味着 TRAE 登录仅在「EAC 服务与 TRAE 桌面端 IDE 同机（loopback 可达）」时可用；经远程 NAS + Web 管理页添加 TRAE 账号受其 OAuth 机制限制、无法走通，属上游设计约束，非 IP 变量可解。
 >   `socat` 为镜像内附加组件，同样不改动上游代码。
 
 ## 上游归属
@@ -76,7 +77,9 @@ LAN Key 也可在管理页「API 接入」查看 / 轮换；`Management Key` 无
 | --------------------------------- | ---------------------------- | -------------------------------------------------- |
 | `OUR_FREE_MODEL_FREE_TRANSPORT`   | `node`                       | 容器内无 Bun 时推理会 502，此变量恢复旧传输层                        |
 | `OFM_TRUSTED_HOSTS`               | 自动探测                         | 放行访问管理页的主机；桥接网络需手动填宿主 IP                           |
-| `OFM_LAN_IP`                      | 自动探测（首个非 docker 网桥的局域网 IPv4） | EAC router「添加账号」登录回调使用的局域网主 IP；手动指定可覆盖自动探测（如多网卡场景） |
+| `OFM_LAN_IP`                      | 自动探测（首个非 docker 网桥的局域网 IPv4） | EAC router「添加账号」登录回调**绑定地址与默认回调 URL host**（TRAE 除外，见上）；手动指定可覆盖自动探测（如多网卡场景） |
+| `OFM_CALLBACK_HOST`              | 未设（回退 `OFM_LAN_IP`）          | 覆盖登录回调 URL 的 host；跨网段 / 远程访问时填客户端实际可路由到的地址（如内网主机名、frp 公网域名） |
+| `OFM_CALLBACK_PORT`              | 未设（回退运行时监听端口）            | 覆盖登录回调 URL 的端口；frp / 反向代理改端口映射时填写                         |
 | `OFM_ADMIN_PORT` / `OFM_LAN_PORT` | `18900` / `18901`            | 管理端口 / 网关端口                                        |
 
 ## 备注

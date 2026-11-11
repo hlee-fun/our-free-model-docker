@@ -9,7 +9,8 @@ Packages the **standalone** mode of [dsh-our-free-model](https://github.com/Ebon
 > **No content changes**: the upstream code is used verbatim (shallow-cloned at build time and packaged). Only three minimal patches are applied, all of which fall back to upstream behaviour when their respective env var is unset (so they are not functional changes):
 > - `docker/patch-trust.mjs` adds an `OFM_TRUSTED_HOSTS` switch to `src/trust.js` to let the LAN Host fence pass (otherwise the management UI returns `403`);
 > - `docker/patch-baseurl.mjs` makes `/api/management/summary` rewrite `baseUrl` based on the **actual request Host header**, fixing the LAN issue where the frontend received a hardcoded `127.0.0.1` base URL and routed its API calls / redirects back to the visitor's own loopback (the address is auto-detected, never hard-coded).
-> - `docker/patch-lan-login.mjs` makes the "add account" login flows under the EAC router (the temporary OAuth callback servers, e.g. Loomy WeChat / Trae / LobsterAI / Raccoon / Carrier) use `OFM_LAN_IP` for both their bind address and the callback URL they show, fixing the LAN issue where the browser opened `http://127.0.0.1:<port>/...` and pointed at its own loopback instead of the host (falls back to upstream behaviour exactly when `OFM_LAN_IP` is unset).
+> - `docker/patch-lan-login.mjs` makes the "add account" login flows under the EAC router (the temporary OAuth callback servers, e.g. Loomy WeChat / LobsterAI / Raccoon / Carrier) use `OFM_LAN_IP` for both their bind address and the callback URL they show, fixing the LAN issue where the browser opened `http://127.0.0.1:<port>/...` and pointed at its own loopback instead of the host (falls back to upstream behaviour exactly when `OFM_LAN_IP` is unset).  
+>   **⚠️ TRAE exception (native_ide login)**: TRAE's `auth_callback_url` must be served by the IDE's own local service (fixed at `127.0.0.1:18080`); trae.cn's authorization page only accepts a loopback callback, and a non-local URL is rejected outright (symptom: "authorization page pops up → fails before you act"). This patch therefore **deliberately leaves TRAE's `server.listen` bind and callback URL untouched**, keeping the upstream `127.0.0.1`. As a result, TRAE login only works when the EAC service and the TRAE desktop IDE run on the same host (loopback reachable); adding a TRAE account via a remote NAS + Web admin page is blocked by trae.cn's OAuth design and cannot be fixed with any IP variable.
 > `socat` is an extra component inside the image and does not modify upstream code either.
 
 ## Upstream attribution
@@ -74,7 +75,9 @@ The LAN Key can also be viewed / rotated in the management UI under "API access"
 |----------|---------|-------------|
 | `OUR_FREE_MODEL_FREE_TRANSPORT` | `node` | Without Bun in the container, inference returns 502; this restores the legacy transport |
 | `OFM_TRUSTED_HOSTS` | auto-detected | Hosts allowed to open the management UI; set the host IP manually on a bridge network |
-| `OFM_LAN_IP` | auto-detected (first non-docker-bridge LAN IPv4) | LAN primary IP used for EAC router "add account" login callbacks; set manually to override auto-detection (e.g. multi-NIC) |
+| `OFM_LAN_IP` | auto-detected (first non-docker-bridge LAN IPv4) | LAN primary IP used as the **bind address and default callback URL host** for EAC router "add account" login callbacks (TRAE excluded, see above); set manually to override auto-detection (e.g. multi-NIC) |
+| `OFM_CALLBACK_HOST` | unset (falls back to `OFM_LAN_IP`) | Overrides the callback URL host; for cross-subnet / remote access, set the address the client can actually route to (e.g. an internal hostname, or the frp public domain) |
+| `OFM_CALLBACK_PORT` | unset (falls back to the runtime listen port) | Overrides the callback URL port; set when frp / reverse proxy remaps the port |
 | `OFM_ADMIN_PORT` / `OFM_LAN_PORT` | `18900` / `18901` | Management port / gateway port |
 
 ## Notes
