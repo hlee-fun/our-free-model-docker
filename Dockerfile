@@ -49,7 +49,8 @@ FROM node:22-bookworm-slim AS runtime
 ARG UPSTREAM_VERSION=unknown
 ENV OFM_HOME=/data
 ENV NODE_ENV=production
-# 上游 main 起 free 目录传输默认为 auto(优先 Bun); 镜像内无 Bun, 固定走 Node 传输层
+# 上游 main 起 free 目录传输默认为 auto(优先 Bun); 0.12 起镜像内置 Bun, auto 可直接工作。
+# 仍默认固定 node 旧传输层保持现网行为一致; 删除本变量即切换为 auto(Bun 跑 POST 推理)。
 ENV OUR_FREE_MODEL_FREE_TRANSPORT=node
 WORKDIR /app
 # 仅复制独立服务所需文件(无 npm install, 无 DSH 依赖)
@@ -78,6 +79,14 @@ RUN node /patch-clipboard.mjs
 RUN apt-get update \
  && apt-get install -y --no-install-recommends socat \
  && rm -rf /var/lib/apt/lists/*
+# 0.12 (2026-11-13): 内置 Bun —— 上游 main 的 free 车道默认传输为 auto(优先 Bun),
+#   POST 推理在 auto/bun 模式下必须有本机 Bun; GET 清单可走 Node。
+#   镜像此前不含 Bun, 一旦部署侧覆盖 OUR_FREE_MODEL_FREE_TRANSPORT 为 auto/bun(或
+#   未来上游收紧 auto 降级), free 车道推理即 502 报「需要本机 Bun」。
+#   内置后: 不设传输变量 = auto(Bun 跑 POST) 也可用; 仍可用 OUR_FREE_MODEL_FREE_TRANSPORT=node
+#   固定旧传输层(现网默认, 行为不变)。
+RUN npm i -g bun \
+ && bun --version
 # 运行时补丁入口: startStandalone 返回后重写 runtime.testModel(不改动任何上游文件)。
 # 由 /entrypoint.sh 默认调用; 上游 cli.mjs 仍保留, 可用环境变量开关回退。
 COPY docker/start-patched.mjs /app/start-patched.mjs
